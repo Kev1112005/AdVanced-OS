@@ -8,3 +8,7 @@
 node_modules/
 .hermes/
 *.log
+
+# Python bytecode
+__pycache__/
+*.pyc
