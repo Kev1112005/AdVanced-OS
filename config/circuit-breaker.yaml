@@ -15,7 +15,7 @@ time_cap:
   check_interval_seconds: 60
 
 global_stop:
-  flag_file: "/tmp/hermes-stop"   # Disk-based flag (not memory — watchdog would un-pause)
+  flag_file: "~/.hermes/stop"     # Disk-based flag outside /tmp (survives reboot)
   message: "HERMES STOPPED by global stop flag"
 
 alerts:

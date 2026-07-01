@@ -51,7 +51,7 @@
 
 ### Decision: Stop State on Disk, Not in Memory
 
-**Chosen:** Global stop flag persists to `/tmp/hermes-stop` or a DB row.
+**Chosen:** Global stop flag persists to `~/.hermes/stop` or a DB row.
 
 **Rationale:** The 5-minute watchdog restarts the session and would silently un-pause an in-memory stop flag. A stop Kevin can't trust is worse than none.
 

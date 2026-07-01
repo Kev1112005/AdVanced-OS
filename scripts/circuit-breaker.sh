@@ -65,7 +65,7 @@ done
 [[ -f "$CONFIG" ]] || { echo "{\"status\":\"ERROR\",\"error\":\"config not found: $CONFIG\"}"; exit 4; }
 
 # --- load config ---
-STOP_FILE="$(yaml_get flag_file "$CONFIG")";     STOP_FILE="$(expand_home "${STOP_FILE:-/tmp/hermes-stop}")"
+STOP_FILE="$(yaml_get flag_file "$CONFIG")";     STOP_FILE="$(expand_home "${STOP_FILE:-$HOME/.hermes/stop}")"
 MAX_DEPTH="$(yaml_get max "$CONFIG")";            MAX_DEPTH="${MAX_DEPTH:-3}"
 CAP="$(yaml_get weekly_usd "$CONFIG")";           CAP="${CAP:-20.0}"
 LOG_FILE="$(yaml_get log_file "$CONFIG")";        LOG_FILE="$(expand_home "${LOG_FILE:-$HOME/.hermes/logs/cost-log.csv}")"

@@ -11,7 +11,7 @@ dispatching.
 | Code | Check | Meaning |
 |------|-------|---------|
 | 0 | — | PASS, dispatch allowed |
-| 1 | global stop | `/tmp/hermes-stop` flag is set |
+| 1 | global stop | `~/.hermes/stop` flag is set |
 | 2 | dispatch depth | correlation ID depth >= `dispatch_depth.max` |
 | 3 | spend cap | weekly spend >= `spend_cap.weekly_usd` |
 | 4 | config | missing/unreadable config or bad correlation ID |
@@ -21,7 +21,7 @@ dispatching.
 ### 1. Global stop (exit 1) — "BLOCKED: Global stop flag set"
 Someone (Kevin, a watchdog, or a runaway-loop detector) hit the emergency
 brake. Every dispatch is refused until the flag is cleared. The flag lives on
-disk (`/tmp/hermes-stop`) so it survives a watchdog restart.
+disk (`~/.hermes/stop`) so it survives a watchdog restart.
 
 **Recover:**
 ```bash

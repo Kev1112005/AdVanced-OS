@@ -5,7 +5,7 @@
 # Exit codes: 0 = stopped (check) / success, 1 = running (check) / usage error
 set -euo pipefail
 
-FLAG_FILE="${HERMES_STOP_FILE:-/tmp/hermes-stop}"
+FLAG_FILE="${HERMES_STOP_FILE:-$HOME/.hermes/stop}"
 STALE_HOURS=24
 
 usage() {
@@ -19,7 +19,7 @@ Usage:
   global-stop.sh status         JSON: status, timestamp, reason
 
 Flag auto-clears if older than ${STALE_HOURS}h (stale watchdog leftover).
-Env: HERMES_STOP_FILE overrides flag path (default /tmp/hermes-stop)
+Env: HERMES_STOP_FILE overrides flag path (default ~/.hermes/stop)
 EOF
 }
 

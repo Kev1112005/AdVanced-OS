@@ -23,7 +23,7 @@ Config stays in the repo; scripts default to `../config/circuit-breaker.yaml`
 relative to their own location. Override per-call with `--config <path>`.
 
 Paths are overridable via env / flags — nothing is hardcoded:
-- `HERMES_STOP_FILE`   (global-stop.sh)  default `/tmp/hermes-stop`
+- `HERMES_STOP_FILE`   (global-stop.sh)  default `$HOME/.hermes/stop`
 - `HERMES_COST_LOG`    (cost-log.sh)     default `~/.hermes/logs/cost-log.csv`
 - `HERMES_WEEKLY_CAP`  (cost-log.sh)     default `20.0`
 
