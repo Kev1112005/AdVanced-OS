@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 echo "Generating status snapshot..."
 ./scripts/status-snapshot.sh
-echo "Starting Mission Control at http://localhost:3001"
-echo "Access from LAN at http://$(hostname -I | awk '{print $1}'):3001"
-cd server && exec python3 serve.py
+MCPORT="${MISSION_CONTROL_PORT:-4001}"
+echo "Starting Mission Control at http://localhost:$MCPORT"
+echo "Access from LAN at http://$(hostname -I | awk '{print $1}'):$MCPORT"
+cd server && MISSION_CONTROL_PORT=$MCPORT exec python3 serve.py
