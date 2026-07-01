@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Mission Control HTTP server — Phase 3.
+
+Serves the dashboard and a few read-only JSON endpoints backed by flat files.
+Python stdlib only: no Flask, no deps. Bind 0.0.0.0:3001 for LAN access.
+
+Endpoints:
+  GET /                  -> public/index.html
+  GET /api/status        -> ~/.hermes/status/current.json (raw passthrough)
+  GET /api/events?limit  -> last N lines of agent-events.log as JSON array
+  GET /api/cost/summary  -> weekly cost rollup parsed from cost-log.csv
+  GET /api/health        -> {"status":"ok","uptime":<seconds>}
+"""
+import csv
+import json
+import os
+import signal
+import sys
+import time
+from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
+
+HOME = os.path.expanduser("~")
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PUBLIC = os.path.join(BASE, "public")
+
+STATUS_FILE = os.environ.get("HERMES_STATUS_FILE", f"{HOME}/.hermes/status/current.json")
+EVENT_LOG = os.environ.get("HERMES_EVENT_LOG", f"{HOME}/.hermes/logs/agent-events.log")
+COST_LOG = os.environ.get("HERMES_COST_LOG", f"{HOME}/.hermes/logs/cost-log.csv")
+CAP = float(os.environ.get("HERMES_WEEKLY_CAP", "20.0"))
+PORT = int(os.environ.get("MISSION_CONTROL_PORT", "3001"))
+
+START = time.time()
+
+
+def week_start():
+    """Monday 00:00 UTC of the current week."""
+    now = datetime.now(timezone.utc)
+    d = now - timedelta(days=now.weekday())
+    return d.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def read_events(limit):
+    """Last `limit` events as list of dicts. Empty list if no log yet."""
+    if not os.path.exists(EVENT_LOG):
+        return []
+    with open(EVENT_LOG, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    out = []
+    for line in lines[-limit:]:
+        parts = line.split("|", 4)
+        if len(parts) != 5:
+            continue
+        ts, cid, event, agent, detail = parts
+        out.append({"ts": ts, "correlation_id": cid, "event": event,
+                    "agent": agent, "detail": detail})
+    return out
+
+
+def cost_summary():
+    """Weekly rollup parsed live from the CSV. Empty-safe."""
+    result = {"total_spend": 0.0, "cap": CAP, "remaining": CAP,
+              "task_count": 0, "by_worker": {}}
+    if not os.path.exists(COST_LOG):
+        return result
+    ws = week_start()
+    total = 0.0
+    with open(COST_LOG, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            try:
+                ts = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+                cost = float(row["cost_usd"])
+            except (ValueError, KeyError, TypeError):
+                continue
+            if ts < ws:
+                continue
+            total += cost
+            result["task_count"] += 1
+            w = row.get("model", "unknown")
+            bw = result["by_worker"].setdefault(w, {"spend": 0.0, "tasks": 0})
+            bw["spend"] = round(bw["spend"] + cost, 2)
+            bw["tasks"] += 1
+    result["total_spend"] = round(total, 2)
+    result["remaining"] = round(CAP - total, 2)
+    return result
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _send(self, code, body, ctype="application/json"):
+        if isinstance(body, (dict, list)):
+            body = json.dumps(body).encode()
+        elif isinstance(body, str):
+            body = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _file(self, path, ctype):
+        try:
+            with open(path, "rb") as f:
+                self._send(200, f.read().decode("utf-8", "replace"), ctype)
+        except FileNotFoundError:
+            self._send(404, {"error": f"not found: {os.path.basename(path)}"})
+
+    def do_GET(self):
+        u = urlparse(self.path)
+        path = u.path
+        if path in ("/", "/index.html"):
+            self._file(os.path.join(PUBLIC, "index.html"), "text/html; charset=utf-8")
+        elif path == "/api/status":
+            # raw passthrough; if snapshot missing, say so gracefully
+            if os.path.exists(STATUS_FILE):
+                self._file(STATUS_FILE, "application/json")
+            else:
+                self._send(200, {"error": "no snapshot yet — run status-snapshot.sh"})
+        elif path == "/api/events":
+            limit = int((parse_qs(u.query).get("limit", ["50"])[0]) or 50)
+            self._send(200, read_events(limit))
+        elif path == "/api/cost/summary":
+            self._send(200, cost_summary())
+        elif path == "/api/health":
+            self._send(200, {"status": "ok", "uptime": round(time.time() - START)})
+        else:
+            self._send(404, {"error": "not found"})
+
+    def log_message(self, fmt, *args):  # to stdout instead of stderr
+        sys.stdout.write("%s - %s\n" % (self.address_string(), fmt % args))
+        sys.stdout.flush()
+
+
+def main():
+    httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+
+    def shutdown(*_):
+        print("\nshutting down…")
+        httpd.shutdown()
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+    print(f"Mission Control on http://0.0.0.0:{PORT}  (serving {PUBLIC})")
+    httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
