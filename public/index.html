@@ -219,7 +219,7 @@ function renderStatus(s) {
       </div>
       <div class="meta">${esc(w.project)} · ${esc(w.session)}</div>
       <div class="dispatch">
-        <textarea placeholder="Dispatch a task to ${esc(w.name)}…" data-agent="${esc(w.name)}"></textarea>
+        <textarea placeholder="Dispatch a task to ${esc(w.name)}…" data-agent="${esc(w.session)}"></textarea>
         <button onclick="dispatch(this)">Dispatch</button>
       </div>
     </div>`).join("") + '</div>' : '<div class="muted">No agents detected</div>';
