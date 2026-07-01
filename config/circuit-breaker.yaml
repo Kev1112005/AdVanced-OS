@@ -1,0 +1,22 @@
+# Circuit Breaker Configuration
+# AdVanced OS — Phase 2
+# Parsed line-by-line with grep/awk (no yq). Keep keys flat & values simple.
+
+spend_cap:
+  weekly_usd: 20.0          # Per-week dollar limit. Hermes stops dispatching when hit.
+  log_file: "~/.hermes/logs/cost-log.csv"  # Phase 1c cost log location
+
+dispatch_depth:
+  max: 3                    # Max chained dispatches from a single request. Kill at 4.
+  correlation_id_prefix: ""  # Hermes correlation ID prefix if any
+
+time_cap:
+  max_minutes: 30           # If task exceeds this, checkpoint and ask Kevin to confirm
+  check_interval_seconds: 60
+
+global_stop:
+  flag_file: "/tmp/hermes-stop"   # Disk-based flag (not memory — watchdog would un-pause)
+  message: "HERMES STOPPED by global stop flag"
+
+alerts:
+  channel: "discord:#officers"    # Where to send alert messages
