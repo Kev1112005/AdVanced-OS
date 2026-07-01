@@ -17,6 +17,7 @@ import os
 import signal
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -28,6 +29,7 @@ PUBLIC = os.path.join(BASE, "public")
 STATUS_FILE = os.environ.get("HERMES_STATUS_FILE", f"{HOME}/.hermes/status/current.json")
 EVENT_LOG = os.environ.get("HERMES_EVENT_LOG", f"{HOME}/.hermes/logs/agent-events.log")
 COST_LOG = os.environ.get("HERMES_COST_LOG", f"{HOME}/.hermes/logs/cost-log.csv")
+REQ_DIR = os.environ.get("HERMES_REQUESTS_DIR", f"{HOME}/.hermes/requests")
 CAP = float(os.environ.get("HERMES_WEEKLY_CAP", "20.0"))
 PORT = int(os.environ.get("MISSION_CONTROL_PORT", "3001"))
 
@@ -86,6 +88,47 @@ def cost_summary():
     return result
 
 
+def pending_dispatches():
+    """All queued dispatch requests, newest first. Empty-safe."""
+    out = []
+    if os.path.isdir(REQ_DIR):
+        for fn in os.listdir(REQ_DIR):
+            if not fn.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(REQ_DIR, fn), encoding="utf-8") as f:
+                    out.append(json.load(f))
+            except (OSError, ValueError):
+                continue
+    out.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    return out
+
+
+def create_dispatch(body):
+    """Validate + persist a dispatch request. Returns (code, response dict)."""
+    try:
+        data = json.loads(body or b"{}")
+    except ValueError:
+        return 400, {"error": "invalid JSON body"}
+    agent = str(data.get("agent", "")).strip()
+    task = str(data.get("task", "")).strip()
+    if not agent or not task:
+        return 400, {"error": "agent and task are required"}
+    priority = str(data.get("priority", "normal")).strip() or "normal"
+
+    rid = str(uuid.uuid4())
+    # ponytail: correlation-id.sh emits exactly "<uuid>:0" for a root dispatch;
+    # replicated inline to skip a subprocess per request.
+    cid = f"{rid}:0"
+    req = {"request_id": rid, "correlation_id": cid, "agent": agent,
+           "task": task, "priority": priority,
+           "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    os.makedirs(REQ_DIR, exist_ok=True)
+    with open(os.path.join(REQ_DIR, f"{rid}.json"), "w", encoding="utf-8") as f:
+        json.dump(req, f, indent=2)
+    return 200, {"status": "queued", "request_id": rid, "correlation_id": cid}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json"):
         if isinstance(body, (dict, list)):
@@ -95,9 +138,23 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self._send(204, "")
+
+    def do_POST(self):
+        if urlparse(self.path).path == "/api/dispatch":
+            n = int(self.headers.get("Content-Length", 0) or 0)
+            body = self.rfile.read(n) if n else b""
+            code, resp = create_dispatch(body)
+            self._send(code, resp)
+        else:
+            self._send(404, {"error": "not found"})
 
     def _file(self, path, ctype):
         try:
@@ -122,6 +179,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, read_events(limit))
         elif path == "/api/cost/summary":
             self._send(200, cost_summary())
+        elif path == "/api/dispatch/pending":
+            self._send(200, pending_dispatches())
         elif path == "/api/health":
             self._send(200, {"status": "ok", "uptime": round(time.time() - START)})
         else:
