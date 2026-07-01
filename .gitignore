@@ -1,0 +1,10 @@
+# AdVanced OS
+
+.DS_Store
+*.swp
+*.swo
+*~
+*.bak
+node_modules/
+.hermes/
+*.log
