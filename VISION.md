@@ -8,27 +8,25 @@ AdVanced OS starts as a terminal-native orchestrator with Discord as its interfa
 
 The long arc moves through three stages:
 
-**Stage 1: Terminal-Native (current → Phase 4)**
-- Kevin interface: Discord CLI
-- Hermes orchestrates via tmux dispatch + cron
-- Observability: structured event log + correlation ID grep
+**Stage 1: Visible (Phase 3)**
+- Primary interface: Mission Control GUI — worker status, event feed, cost meters, system health
+- Kevin interface: GUI (awareness) + Discord CLI (control)
+- Observability: structured event log feeding the GUI, status snapshot as JSON endpoint
 - Safety: circuit breaker with spend cap + global stop
 - Workers: Claude Code (general), DeepSeek (research), cron (scheduled)
-- Memory: Obsidian vault + OpenBrain + Hermes memory
 
-**Stage 2: Observable (Phase 5a-5e)**
-- Hermes emits structured events at every boundary
-- `hermes status` answers "what's running now" on Discord
+**Stage 2: Observable (Phase 4-5)**
+- Discord approval UX for deploy control
 - Compound learning file allows Hermes to inject cross-session patterns into task docs
 - QA gate catches delivery failures before Kevin sees them
-- Still terminal-native, but the information is structured and queryable
+- Async shell bridge for worker→orchestrator communication
+- Production hardening and graceful degradation
 
-**Stage 3: Visible (Phase 5c + beyond — stretch)**
-- Mission Control HTML page shows all agents, tasks, and status in one view
-- Chronological event viewer with correlation ID filtering
-- Spend trends over time
-- Worker health metrics
-- Not a replacement for terminal-native operation — an addition for at-a-glance awareness
+**Stage 3: Autonomous Input (Phase 5d-5g)**
+- Async ticket surface — Kevin drops tickets, Hermes discovers them on cron
+- Hermes-run QA gate verifies success criteria before accepting delivery
+- Tool-scoped worker profiles for research and code-review
+- Compound learning file cross-session pattern accumulation
 
 ## What Success Looks Like
 

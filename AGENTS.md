@@ -46,7 +46,6 @@ AdVanced OS is a **Hermes-based Agentic Operating System**. The orchestrator is 
 | AIOS / Agno / LangGraph | In-process frameworks that own the LLM loop |
 | Graceful degradation framework | Single host = no HA, alert + back off is correct |
 | Deploy Go/No-Go automation | Kevin approves every deploy |
-| Mission Control dashboard (full) | Data layer (5a/5b) provides same info terminal-native |
 | Self-improvement loop | Compound learning file (5d) is the Hermes-native approach |
 | Subagent/profile spawning CLI | Only 2 profiles exist — manual setup is fine |
 | Loop self-critique / maker-checker LLM verifier | Duplicates Decisions 006 & 007 — use shell QA gate (5e) + human-curated STATE |

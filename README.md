@@ -18,18 +18,23 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                       KEVIN                                   │
-│           Discord CLI   (approval surface)                    │
-└──────────────────────────┬───────────────────────────────────┘
-                           │
-┌──────────────────────────▼───────────────────────────────────┐
+│  ┌─────────────────────┐    ┌──────────────────────────────┐ │
+│  │ Mission Control GUI  │    │    Discord CLI              │ │
+│  │ (awareness surface)  │    │ (control surface)           │ │
+│  │ • Worker status      │    │ • Dispatch                  │ │
+│  │ • Event feed         │    │ • Approve deploy            │ │
+│  │ • Cost/spend meters  │    │ • Global stop               │ │
+│  │ • System health      │    │ • Configure                 │ │
+│  └─────────┬───────────┘    └──────────┬───────────────────┘ │
+└────────────┼───────────────────────────┼─────────────────────┘
+             │                           │
+┌────────────▼───────────────────────────▼─────────────────────┐
 │                  HERMES (Orchestrator)                        │
 │   • Task decomposition & routing                              │
 │   • Research & design review (DeepSeek V4 Pro)                │
 │   • Agent dispatch & monitoring                               │
 │   • Cron scheduling                                           │
 │   • Post-merge deploy pipeline                                │
-│   NOT responsible for: code review gating, deploy go/no-go,   │
-│   final architectural decisions — those route through Kevin   │
 └──────────────────┬───────────────────────────────────────────┘
                    │
 ┌──────────────────▼───────────────────────────────────────────┐
@@ -53,13 +58,14 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 
 ## Design Principles
 
-1. **Hermes does not write production code** — that's the worker's job, via task docs
-2. **Workers do not trigger deploys, cron changes, or state mutations** — those are Hermes's job, behind Kevin's approval
-3. **No synchronous callbacks across the dispatch channel** — async request files only
-4. **Small, idempotent, frequently-committed tasks** — the only reliable disaster recovery
-5. **Kevin is the top of the architecture** — every significant decision, deploy, or mutation routes to Discord for approval
-6. **Circuit breaker outranks every other feature** — spend cap, dispatch-depth limit, persistent global stop
-7. **Build the brakes before the accelerator** — safety before autonomy
+1. **The GUI is the primary interface** — the Mission Control dashboard shows every agent, every task, every cost. The CLI is for control actions faster by keyboard.
+2. **Hermes does not write production code** — that's the worker's job, via task docs
+3. **Workers do not trigger deploys, cron changes, or state mutations** — those are Hermes's job, behind Kevin's approval
+4. **No synchronous callbacks across the dispatch channel** — async request files only
+5. **Small, idempotent, frequently-committed tasks** — the only reliable disaster recovery
+6. **Kevin is the top of the architecture** — every significant decision, deploy, or mutation routes to Discord for approval
+7. **Circuit breaker outranks every other feature** — spend cap, dispatch-depth limit, persistent global stop
+8. **Build the brakes before the accelerator** — safety before autonomy
 
 ## Key Features
 
@@ -67,17 +73,17 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 |---------|--------|-------|
 | Circuit breaker (spend cap, dispatch depth, global stop) | Planned | Phase 2 |
 | Correlation ID tracing | Planned | Phase 1b |
-| Cost logging (per-task, weekly summary) | Planned | Phase 1c |
+| Cost logging (per-task, GUI-displayed spend meters) | Planned | Phase 1c |
+| **Mission Control GUI** (worker status, event feed, cost meters, system health) | **Planned** | **Phase 3** |
+| Structured observability (event log feeding the GUI) | Planned | Phase 3 |
+| Agent status snapshot (JSON endpoint for GUI) | Planned | Phase 3 |
+| Discord approval UX (deploy summaries, confirm-before-deploy) | Planned | Phase 4 |
 | Async shell bridge (hermes-request, hermes-notify) | Planned | Phase 1a |
-| Discord approval UX (deploy summaries, confirm-before-deploy) | Planned | Phase 3 |
-| Production hardening (graceful degradation) | Planned | Phase 4 |
-| Structured observability (structured event log) | Planned | Phase 5a |
-| Agent status snapshot (hermes status) | Planned | Phase 5b |
-| Mission Control HTML page (visual dashboard) | Stretch | Phase 5c |
-| Compound learning file (cross-session pattern accumulation) | Planned | Phase 5d |
+| Production hardening (graceful degradation) | Planned | Phase 5 |
 | Hermes-run QA gate (success criteria verification) | Planned | Phase 5e |
+| Compound learning file (cross-session pattern accumulation) | Planned | Phase 5d |
 | Tool-scoped worker profiles (research/code-review/general) | Stretch | Phase 5f |
-
+| Async ticket surface (vault-based tickets) | Planned | Phase 5g |
 ## Quick Start
 
 ```bash

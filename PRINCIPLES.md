@@ -83,17 +83,26 @@ Automated systems that generate improvements (skill patches, memory entries, ref
 
 **Violation signal:** If a proposal involves a system that autonomously modifies reference material without human review, it's over-engineered.
 
-## 7. Build What You Need, Not What the Market Has
+## 7. The GUI Is the Operating System's Interface
 
-The 2026 Agentic OS market includes features we don't need: cost dashboards, subagent spawning CLIs, self-improvement loops, one-click backup, visual dashboards. These are real features for other setups. They are not necessarily right for ours.
+An operating system without a visible interface isn't an OS — it's a backend. AdVanced OS's primary interface is the Mission Control GUI: the at-a-glance dashboard showing every agent, every task, every cost, and every system health metric. The Discord CLI is the secondary interface — for control actions (dispatch, approve, stop) that are faster by keyboard.
+
+**This means:**
+- The GUI is a core feature, not a stretch goal. It ships alongside or before the control infrastructure.
+- The GUI provides awareness (what's running, what happened, what it cost). The CLI provides control (dispatch, approve, stop). They are complementary, not competing.
+- A 200-line static HTML page with inline CSS and JS that polls JSON endpoints is sufficient to start. It doesn't need to be a polished React app. It needs to exist.
+- Cost data is displayed in the GUI, not sent as a weekly Discord text message. Spend-to-cap meters, per-worker cost breakdowns, and trend lines are visual by nature.
+- The event log feeds the GUI's live feed. The status snapshot feeds the GUI's worker cards. The cost log feeds the GUI's spend meters. The GUI is the consumer of the observability infrastructure, not a separate system.
+- `tmux capture-pane` + polling loops are the fallback when the GUI is unavailable, not the primary interface.
+
+**Violation signal:** If someone proposes adding a feature to the observability layer without ensuring the GUI can display it, the feature is incomplete.
+
+## 8. Build What You Need, Not What the Market Has
+
+The 2026 Agentic OS market includes features we don't need: subagent spawning CLIs, self-improvement loops, one-click backup, autonomous L3 tiers. These are real features for other setups. They are not necessarily right for ours.
 
 **This means:**
 - Only two Hermes profiles exist (default + ornith). A profile spawning CLI is unnecessary until count exceeds 5.
-- Weekly text summary covers cost visibility. A dashboard adds a server process and no new information.
 - The compound learning file covers cross-session pattern accumulation. A Dreaming-style reviewer agent adds infrastructure cost for marginal benefit.
-- `tmux capture-pane` + polling loops cover monitoring. A visual dashboard is stretch.
 - Every market feature is evaluated against our actual pain points, not against what competitors ship.
-
-**Test:** If Kevin hasn't asked for it and the current workflow isn't broken by its absence, it doesn't get built.
-
-**Violation signal:** If a feature is justified by "competitor X has it" rather than "our workflow hurts because of Y," it's cargo-culting.
+- The GUI is the one exception to this principle — it's not a market-driven feature, it's a fundamental interface requirement for an operating system.

@@ -105,13 +105,19 @@
 
 **Rationale:** Correlation ID + grep is sufficient for a one-person system. A tracing DB adds infrastructure (collector, storage, query layer) for marginal benefit. When structured queries become necessary, the flat file can be imported into anything.
 
-### Decision: Weekly Discord Summary, Not a Cost Dashboard
+### Decision: GUI Is the Primary Interface
 
-**Chosen:** Weekly Discord message: total spend, breakdown by worker, trend vs last week.
+**Chosen:** Mission Control GUI for awareness (what's running, what happened, what it cost). Discord CLI for control (dispatch, approve, stop).
 
-**Rejected:** Real-time cost dashboard UI.
+**Rationale:** An operating system without a visible interface isn't an OS — it's a backend. The GUI provides at-a-glance awareness that terminal output cannot. The CLI handles control actions that are faster by keyboard. They are complementary, not competing.
 
-**Rationale:** A dashboard adds a server process and visual polish but no new information. The data (parse Claude usage JSON + log) is the same. If Kevin starts asking about spend trends before the weekly summary naturally covers them, upgrade to a richer format — but not before.
+### Decision: Mission Control Is a Single Static HTML Page, Not a Web App
+
+**Chosen:** 200-line static HTML page with inline CSS and JS. Polls JSON endpoints every 5 seconds. Served by a lightweight HTTP server (Python http.server or 10-line Express app).
+
+**Rejected:** React/Vue SPA, real-time WebSockets, authentication layer, customizable views, mobile app.
+
+**Rationale:** Single-user system. The dashboard reads existing files (event log, status snapshot, cost log) and displays them. It doesn't need a build step, a database, or a framework. WebSockets add complexity for negligible benefit over 5-second polling. Authentication is handled by network boundary (local-only, reverse proxy if shared). A framework would add a build pipeline to a project that doesn't otherwise need one.
 
 ## Do Not Build (Quick Reference)
 

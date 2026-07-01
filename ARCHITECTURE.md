@@ -2,9 +2,20 @@
 
 ## Overview
 
-AdVanced OS is a three-layer architecture: **Orchestration → Dispatch → Workers**. The human operator (Kevin) sits at the top. The entire system is designed around one hard constraint: **a single serial tmux channel to the primary coding worker (Claude Code)**.
+AdVanced OS is a four-layer architecture: **Interface → Orchestration → Dispatch → Workers**. Kevin interacts through two complementary interfaces — the Mission Control GUI (awareness) and the Discord CLI (control). The entire system is designed around one hard constraint: **a single serial tmux channel to the primary coding worker (Claude Code)**.
 
-## The Three Layers
+## The Four Layers
+
+### Layer 0: Interface
+
+Two complementary interfaces sit above the orchestrator. They share the same backend data but serve different purposes:
+
+| Interface | Role | Technology | Use When |
+|-----------|------|------------|----------|
+| **Mission Control GUI** | Awareness — at-a-glance status of all agents, tasks, costs, and system health | Static HTML + CSS + JS, polls JSON endpoints | Sitting at a desk, want to see everything at once |
+| **Discord CLI** | Control — dispatch, approve deploys, stop, configure | Hermes Agent via Discord | On mobile, in a meeting, or when an action is faster by keyboard |
+
+The GUI is the primary interface — the operating system's main display. The CLI is the control surface for actions that are faster by keyboard. They share the same data sources (event log, status snapshot, cost log) and are consistent with each other.
 
 ### Layer 1: Orchestration (Hermes)
 
