@@ -74,6 +74,7 @@ All gated behind the circuit breaker. Build only when needed.
 | 5d | Compound learning file — Hermes-curated cross-session patterns | 30 min | Medium | Anytime — Hermes injects relevant learnings into task docs |
 | 5e | Hermes-run QA gate — success criteria checked after worker finishes | 30 min | High | After Phase 3 — catches delivery failures before Kevin sees them |
 | 5f | Tool-scoped worker profiles — research/code-review workers with restricted tools | Half day | Stretch | Only when context contamination or cost becomes a problem |
+| 5g | Async ticket surface — Kevin drops tickets into a `tickets/` vault directory; Hermes scans on cron, dispatches through the serial channel with circuit-breaker lock held. Verification via the 5e shell gate. No LLM verifier, no post-run critique, no unattended tier. | Half day | Medium | After Phases 2 + 5e. Solves "work while away" without adding autonomy. |
 
 ## Success Metrics
 
@@ -96,7 +97,8 @@ All gated behind the circuit breaker. Build only when needed.
 | Cost analytics dashboard | Weekly Discord text summary only. | Phase 1c is sufficient. | NOT NEEDED |
 | Subagent/profile spawning | `ornith` manually wired. | Manual `hermes setup` until >5 profiles. | NOT NEEDED |
 | One-click backup/restore | Manual backup only. | Not needed until complexity justifies it. | NOT NEEDED |
-| Agent org chart | Not documented. | ARCHITECTURE.md + docs/worker-profiles/ covers this. | DONE |
+| Async ticket surface | Kevin must be in Discord to initiate work. | 5g — tickets/ vault directory, Hermes scans on cron, 5e gate verification. | MEDIUM |
+| Loop self-critique / maker-checker LLM verifier | Not proposed. | DO_NOT_BUILD — duplicates Decisions 006 & 007. Use shell QA gate (5e) + human-curated STATE. | NOT NEEDED |
 
 ## Roadmap
 
@@ -119,6 +121,7 @@ Optional Phase 5:
    5d  Compound learning file (30 min)
    5e  Hermes-run QA gate (30 min)
    5f  Tool-scoped worker profiles (half day — stretch)
+   5g  Async ticket surface (half day — vault-based tickets, Hermes scans on cron, 5e gate verification)
 ```
 
 Total core: ~3 days. Phase 5 adds ~1-2 optional days.
