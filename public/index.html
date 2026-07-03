@@ -94,9 +94,12 @@
   .st.fail { background: rgba(239,68,68,.15); color: var(--red); }
   .foot { color: var(--dim); font-size: 11px; padding: 0 20px 20px; }
   /* live output */
-  #livePanel { display: none; margin: 0 20px 16px; max-width: 1400px; }
+  #livePanel { margin: 0 20px 16px; max-width: 1400px; }
   #livePanel .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   #livePanel .head h2 { margin: 0; }
+  #liveSelect { margin-left: auto; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+                border-radius: 5px; padding: 4px 8px; font: inherit; font-size: 12px; }
+  #liveSelect:focus { outline: none; border-color: var(--green); }
   .dot.pulse { animation: pulse 1.4s ease-in-out infinite; }
   #liveOut { max-height: 400px; overflow-y: auto; background: var(--panel2); border: 1px solid var(--line);
              border-radius: 6px; padding: 10px 12px; margin: 0; white-space: pre-wrap; word-break: break-word;
@@ -118,9 +121,16 @@
   <div id="livePanel" class="panel">
     <div class="head">
       <span id="liveDot" class="dot"></span>
-      <h2>Live Output — Belial</h2>
+      <h2>Live Output — <span id="liveAgentName">Belial</span></h2>
+      <select id="liveSelect" onchange="renderLive()">
+        <option value="claude-belial">Belial</option>
+        <option value="ornith">Ornith</option>
+        <option value="claude-obsoletebot">ObsoleteBot</option>
+        <option value="claude-remote-control">Remote Control</option>
+        <option value="hermes">Azrael</option>
+      </select>
     </div>
-    <pre id="liveOut"></pre>
+    <pre id="liveOut">Waiting for output…</pre>
   </div>
 
   <div class="grid">
@@ -295,14 +305,19 @@ function renderCost(c) {
 }
 
 async function renderLive() {
-  const j = await getJSON("/api/agent/session?session=claude-belial&lines=20");
-  const panel = $("#livePanel"), dot = $("#liveDot"), pre = $("#liveOut");
-  // Only show the panel while Belial is actively working — idle static output is noise.
-  if (!j || j.status !== "active") { panel.style.display = "none"; return; }
-  panel.style.display = "";
-  dot.className = "dot pulse " + (j.error ? "bad" : "ok");
+  const sel = $("#liveSelect"), dot = $("#liveDot"), pre = $("#liveOut");
+  $("#liveAgentName").textContent = sel.options[sel.selectedIndex].text;
+  const j = await getJSON(`/api/agent/session?session=${encodeURIComponent(sel.value)}&lines=20`);
+  // No session yet (e.g. Ornith before its first dispatch wakes it).
+  if (!j || j.error) {
+    dot.className = "dot bad";
+    pre.textContent = "Agent not online — session may be starting…";
+    return;
+  }
+  // green pulse = active, dim = idle.
+  dot.className = "dot " + (j.status === "active" ? "pulse ok" : "");
   const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
-  pre.textContent = j.output || "";
+  pre.textContent = j.output || "Waiting for output…";
   if (atBottom) pre.scrollTop = pre.scrollHeight;
 }
 
