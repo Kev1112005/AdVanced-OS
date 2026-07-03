@@ -75,7 +75,7 @@
 
 **Rejected (for now):** Tool-scoped worker profiles (research worker with Read-only, code-review worker with Git diff only).
 
-**Rationale:** Only two profiles exist (default + ornith). Not enough worker diversity to need a tooling system. When context contamination or cost from using expensive models for cheap tasks becomes a problem, implement Phase 5f.
+**Rationale:** Only the default profile exists. Not enough worker diversity to need a tooling system. When context contamination or cost from using expensive models for cheap tasks becomes a problem, implement Phase 5f.
 
 ### Decision: Hermes-Managed Worker Profiles, Not Claude `.claude/agents/*.md`
 

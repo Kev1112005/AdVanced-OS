@@ -13,7 +13,7 @@
 | **Graceful degradation framework** | Single Docker host = no HA. Alert + back off is the correct response. | `if X down: alert Kevin + back off` |
 | **Deploy Go/No-Go automation** | Kevin should approve every deploy. | Clear Discord approval UX (Phase 3). |
 | **Self-improvement loop** | Produces references Kevin hand-filters anyway. Automated dedup/pruning generates noise. | Compound learning file (Phase 5d) — machine-writeable, human-curated. Same value, zero noise. |
-| **Subagent/profile spawning CLI** | Only 2 profiles exist (default + ornith). Not enough diversity to need a creation tool. | Manual `hermes setup` for new profiles until count exceeds 5. |
+| **Subagent/profile spawning CLI** | Only the default profile exists. Not enough diversity to need a creation tool. | Manual `hermes setup` for new profiles until count exceeds 5. |
 | **Rubric-driven LLM grader (Outcomes)** | Using a separate LLM to grade output is expensive and introduces model bias. | Phase 5e — Hermes checks concrete success criteria with shell commands. Cheaper, faster, bias-free. |
 | **Claude `.claude/agents/*.md` subagents** | Tied to Anthropic's infra. Assumes Claude is orchestrator, not Hermes. | Hermes-managed worker profiles (Phase 5f) — infra-agnostic, works with any backend. |
 | **Loop self-critique / maker-checker LLM verifier** | Duplicates Decisions 006 (shell QA gate) and 007 (no self-improvement loop). Using an LLM to grade output reopens closed decisions on the rejected side. | Hermes-run QA gate (Phase 5e) checks concrete criteria with shell commands. Loop memory goes in the compound learning file (5d) — machine-writeable, human-curated. |

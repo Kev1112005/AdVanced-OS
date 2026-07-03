@@ -12,27 +12,25 @@ MAX_DEPTH="${HERMES_MAX_DEPTH:-3}"
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 # Build the workers[] JSON. No jq — manual JSON. Live tmux sessions report
-# active/idle; roster agents that run outside tmux (Azrael=Hermes, Ornith=profile)
-# report offline when their session is down so they still show on the dashboard.
+# active/idle; roster agents that run outside tmux (Azrael=Hermes) report
+# offline when their session is down so they still show on the dashboard.
 detect_workers() {
   command -v tmux >/dev/null 2>&1 || return
   # Known agents that may run without a tmux session. session|display|model|effort|dir|project
   local -a KNOWN_AGENTS=(
     "hermes|Azrael|deepseek-v4-flash|orchestrator|~|AdVanced OS"
-    "ornith|Ornith|ornith-9b|local|~|Vox"
   )
   local name display model effort dir proj status seen=" "
   local -a rows=()
 
   # 1. Live sessions (existing behavior): active/idle.
   while IFS= read -r name; do
-    [[ "$name" == ornith || "$name" == hermes || "$name" == claude-* ]] || continue
+    [[ "$name" == hermes || "$name" == claude-* ]] || continue
     case "$name" in
       claude-belial)         display="Belial";        model="claude-opus-4.8"; effort="high";  dir="~/AdVanced-OS"; proj="AdVanced OS" ;;
       claude-obsoletebot)    display="ObsoleteBot";    model="claude-opus-4.8"; effort="high";  dir="~/ObsoleteBot"; proj="ObsoleteBot" ;;
       claude-remote-control) display="Remote Control"; model="claude-opus-4.8"; effort="high";  dir="~/ObsoleteBot"; proj="ObsoleteBot" ;;
       hermes)                display="Azrael";         model="deepseek-v4-flash"; effort="orchestrator"; dir="~"; proj="AdVanced OS" ;;
-      ornith)                display="Ornith";         model="ornith-9b";       effort="local"; dir="~";             proj="Vox" ;;
       *)                     display="$name";          model="unknown";         effort="unknown"; dir="";            proj="" ;;
     esac
     status="idle"

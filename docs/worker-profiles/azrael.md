@@ -30,7 +30,7 @@ tools:
 
 - Coordinating multi-agent work
 - Scheduling and managing cron jobs
-- Anything that needs to fan work out to Belial, Ornith, or ObsoleteBot
+- Anything that needs to fan work out to Belial or ObsoleteBot
 
 ## When NOT to Use
 

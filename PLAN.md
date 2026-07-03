@@ -138,7 +138,7 @@ Kevin drops tickets into a `tickets/` vault directory; Hermes scans on cron, dis
 | Tool-scoped worker profiles | Every dispatch to same general worker. | Phase 5f — worker registry with restricted toolsets. | STRETCH |
 | Compound learning | Manual skill curation. No cross-session file. | Phase 5d — Hermes-curated, injected into task docs. | LOW |
 | Async ticket surface | Kevin must be in Discord to initiate work. | Phase 5g — tickets/ vault directory, Hermes scans on cron. | LOW |
-| Subagent/profile spawning | `ornith` manually wired. | Manual `hermes setup` until >5 profiles. | NOT NEEDED |
+| Subagent/profile spawning | Manually wired as needed. | Manual `hermes setup` until >5 profiles. | NOT NEEDED |
 | One-click backup/restore | Manual backup only. | Not needed until complexity justifies it. | NOT NEEDED |
 | Loop self-critique / maker-checker LLM verifier | Not proposed. | DO_NOT_BUILD — duplicates Decisions 006 & 007. | NOT NEEDED |
 

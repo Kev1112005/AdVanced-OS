@@ -102,7 +102,7 @@ An operating system without a visible interface isn't an OS — it's a backend. 
 The 2026 Agentic OS market includes features we don't need: subagent spawning CLIs, self-improvement loops, one-click backup, autonomous L3 tiers. These are real features for other setups. They are not necessarily right for ours.
 
 **This means:**
-- Only two Hermes profiles exist (default + ornith). A profile spawning CLI is unnecessary until count exceeds 5.
+- Only the default Hermes profile exists. A profile spawning CLI is unnecessary until count exceeds 5.
 - The compound learning file covers cross-session pattern accumulation. A Dreaming-style reviewer agent adds infrastructure cost for marginal benefit.
 - Every market feature is evaluated against our actual pain points, not against what competitors ship.
 - The GUI is the one exception to this principle — it's not a market-driven feature, it's a fundamental interface requirement for an operating system.

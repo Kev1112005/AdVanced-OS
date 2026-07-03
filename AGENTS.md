@@ -82,7 +82,6 @@ AdVanced OS is a **Hermes-based Agentic Operating System**. The orchestrator is 
 | Worker | Role | Tools | Model |
 |--------|------|-------|-------|
 | Azrael | orchestrator | Full (delegate_task, cron, terminal) | DeepSeek V4 Flash |
-| Ornith | local | Read, Grep, local inference | ornith-9b |
 | (planned) | research | Read, Glob, Grep, Web search | DeepSeek V4 Flash |
 | (planned) | code-review | Read, Glob, Grep, Git diff | Claude Code |
 | (current) | general | Full tools | Claude Code |
