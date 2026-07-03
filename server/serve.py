@@ -142,7 +142,7 @@ def create_dispatch(body):
     task = str(data.get("task", "")).strip()
     if not agent or not task:
         return 400, {"error": "agent and task are required"}
-    KNOWN_AGENTS = {"claude-belial", "claude-obsoletebot", "claude-remote-control"}
+    KNOWN_AGENTS = {"claude-belial", "claude-obsoletebot", "claude-remote-control", "ezekiel"}
     if agent not in KNOWN_AGENTS:
         return 400, {"error": f"unknown agent '{agent}'. known agents: {', '.join(sorted(KNOWN_AGENTS))}"}
     priority = str(data.get("priority", "normal")).strip() or "normal"

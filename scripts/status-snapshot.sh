@@ -17,18 +17,20 @@ now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 detect_workers() {
   command -v tmux >/dev/null 2>&1 || return
   # Known agents that may run without a tmux session. session|display|model|effort|dir|project
-  # Empty for now — add a line here to surface a non-tmux agent as offline.
-  local -a KNOWN_AGENTS=()
+  local -a KNOWN_AGENTS=(
+    "ezekiel|Ezekiel|deepseek-v4-flash|research|~|AdVanced OS"
+  )
   local name display model effort dir proj status seen=" "
   local -a rows=()
 
   # 1. Live sessions (existing behavior): active/idle.
   while IFS= read -r name; do
-    [[ "$name" == claude-* ]] || continue
+    [[ "$name" == ezekiel || "$name" == claude-* ]] || continue
     case "$name" in
       claude-belial)         display="Belial";        model="claude-opus-4.8"; effort="high";  dir="~/AdVanced-OS"; proj="AdVanced OS" ;;
       claude-obsoletebot)    display="ObsoleteBot";    model="claude-opus-4.8"; effort="high";  dir="~/ObsoleteBot"; proj="ObsoleteBot" ;;
       claude-remote-control) display="Remote Control"; model="claude-opus-4.8"; effort="high";  dir="~/ObsoleteBot"; proj="ObsoleteBot" ;;
+      ezekiel)               display="Ezekiel";       model="deepseek-v4-flash"; effort="research"; dir="~";           proj="AdVanced OS" ;;
       *)                     display="$name";          model="unknown";         effort="unknown"; dir="";            proj="" ;;
     esac
     status="idle"

@@ -81,6 +81,7 @@ AdVanced OS is a **Hermes-based Agentic Operating System**. The orchestrator is 
 
 | Worker | Role | Tools | Model |
 |--------|------|-------|-------|
+| Ezekiel | research | Read, Glob, Grep, Web search | DeepSeek V4 Flash |
 | (planned) | research | Read, Glob, Grep, Web search | DeepSeek V4 Flash |
 | (planned) | code-review | Read, Glob, Grep, Git diff | Claude Code |
 | (current) | general | Full tools | Claude Code |

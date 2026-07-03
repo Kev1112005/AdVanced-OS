@@ -124,6 +124,7 @@
       <h2>Live Output — <span id="liveAgentName">Belial</span></h2>
       <select id="liveSelect" onchange="renderLive()">
         <option value="claude-belial">Belial</option>
+        <option value="ezekiel">Ezekiel</option>
         <option value="claude-obsoletebot">ObsoleteBot</option>
         <option value="claude-remote-control">Remote Control</option>
       </select>
@@ -165,7 +166,7 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const hhmm = ts => (ts && ts.length >= 16) ? ts.slice(11, 16) : "—";
-const ICON = {"Belial":"⚔️","ObsoleteBot":"🤖","Remote Control":"📡"};
+const ICON = {"Belial":"⚔️","Ezekiel":"📖","ObsoleteBot":"🤖","Remote Control":"📡"};
 
 let toastTimer;
 function toast(msg, isErr) {

@@ -17,6 +17,29 @@ flock -n 9 || exit 0
 # at queue volumes of a handful of files. Batch-parse if the queue ever gets deep.
 field() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get(sys.argv[2],""))' "$1" "$2"; }
 
+# Ezekiel runs as `hermes -p ezekiel`, not a persistent tmux session. Launch it on
+# demand in tmux so dispatches land and its output shows on the dashboard.
+# Returns 0 once the TUI is ready for input, 1 if it never gets there.
+# ponytail: readiness = the "Welcome to Hermes" banner, which prints only when the
+# TUI is accepting input (unambiguous, unlike the ❯ glyph which also appears in
+# load-time menus). --yolo skips approval prompts, so no dialog to navigate. 60s
+# budget = observed deepseek-v4-flash cold start (~30-40s loading skills+MCP); a
+# poll retries if a launch overruns. Tune the banner/timeout if the TUI changes.
+wake_ezekiel() {
+  tmux has-session -t ezekiel 2>/dev/null && return 0
+  tmux new-session -d -s ezekiel -x 140 -y 40 2>/dev/null || return 1
+  tmux send-keys -t ezekiel 'hermes -p ezekiel --yolo' Enter
+  local waited=0
+  while [ $waited -lt 60 ]; do
+    sleep 3; waited=$((waited + 3))
+    if tmux capture-pane -t ezekiel -p -S -40 2>/dev/null | grep -qiF 'Welcome to Hermes'; then
+      sleep 2   # let the input box settle before the caller sends the task
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Circuit breaker: if tripped, drain nothing this poll.
 if bash "$SCRIPT_DIR/global-stop.sh" check >/dev/null 2>&1; then
   # Only output on circuit-breaker events — otherwise the no-agent cron stays silent
@@ -36,8 +59,14 @@ for req_file in "${files[@]}"; do
   task="$(field "$req_file" task)"
   cid="$(field "$req_file" correlation_id)"
 
-  # Target must be a live tmux session; unknown/dead agent → leave for a later poll.
-  if ! tmux has-session -t "$agent" 2>/dev/null; then
+  # Ezekiel isn't a persistent session — wake it on demand. Other agents must
+  # already be a live tmux session; unknown/dead agent → leave for a later poll.
+  if [[ "$agent" == ezekiel ]]; then
+    if ! wake_ezekiel; then
+      bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event fail --agent ezekiel --detail "wake failed / not ready within 60s"
+      continue
+    fi
+  elif ! tmux has-session -t "$agent" 2>/dev/null; then
     continue
   fi
 
