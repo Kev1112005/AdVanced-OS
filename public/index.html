@@ -126,7 +126,6 @@
         <option value="claude-belial">Belial</option>
         <option value="claude-obsoletebot">ObsoleteBot</option>
         <option value="claude-remote-control">Remote Control</option>
-        <option value="hermes">Azrael</option>
       </select>
     </div>
     <pre id="liveOut">Waiting for output…</pre>
@@ -166,7 +165,7 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const hhmm = ts => (ts && ts.length >= 16) ? ts.slice(11, 16) : "—";
-const ICON = {"Belial":"⚔️","ObsoleteBot":"🤖","Remote Control":"📡","Azrael":"🕊️"};
+const ICON = {"Belial":"⚔️","ObsoleteBot":"🤖","Remote Control":"📡"};
 
 let toastTimer;
 function toast(msg, isErr) {
@@ -307,7 +306,7 @@ async function renderLive() {
   const sel = $("#liveSelect"), dot = $("#liveDot"), pre = $("#liveOut");
   $("#liveAgentName").textContent = sel.options[sel.selectedIndex].text;
   const j = await getJSON(`/api/agent/session?session=${encodeURIComponent(sel.value)}&lines=20`);
-  // No session yet (e.g. Azrael, which runs as Hermes, not a tmux session).
+  // No live tmux session for the selected agent (e.g. it isn't running).
   if (!j || j.error) {
     dot.className = "dot bad";
     pre.textContent = "Agent not online — session may be starting…";
