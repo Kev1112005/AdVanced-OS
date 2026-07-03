@@ -14,7 +14,9 @@ Endpoints:
 import csv
 import json
 import os
+import re
 import signal
+import subprocess
 import sys
 import time
 import uuid
@@ -104,6 +106,32 @@ def pending_dispatches():
     return out
 
 
+def agent_session(session, lines=20):
+    """Capture last N lines of a tmux session pane. Returns JSON-safe dict."""
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-t", session, "-p", "-S", f"-{lines}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return {"session": session, "error": "session not found",
+                    "output": "", "status": "unknown"}
+        raw = result.stdout
+        status = "active" if re.search(
+            r"Spinning|Baking|Hatching|Misting|Thinking|Deliberating", raw
+        ) else "idle"
+        # Strip ANSI escape sequences
+        clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", raw)
+        return {"session": session, "status": status, "output": clean}
+    except FileNotFoundError:
+        return {"session": session, "error": "tmux not found",
+                "output": "", "status": "unknown"}
+    except subprocess.TimeoutExpired:
+        return {"session": session, "error": "timeout",
+                "output": "", "status": "unknown"}
+
+
+
 def create_dispatch(body):
     """Validate + persist a dispatch request. Returns (code, response dict)."""
     try:
@@ -114,7 +142,7 @@ def create_dispatch(body):
     task = str(data.get("task", "")).strip()
     if not agent or not task:
         return 400, {"error": "agent and task are required"}
-    KNOWN_AGENTS = {"claude-belial", "claude-obsoletebot", "claude-remote-control", "ornith"}
+    KNOWN_AGENTS = {"claude-belial", "claude-obsoletebot", "claude-remote-control", "ornith", "azrael"}
     if agent not in KNOWN_AGENTS:
         return 400, {"error": f"unknown agent '{agent}'. known agents: {', '.join(sorted(KNOWN_AGENTS))}"}
     priority = str(data.get("priority", "normal")).strip() or "normal"
@@ -182,6 +210,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, read_events(limit))
         elif path == "/api/cost/summary":
             self._send(200, cost_summary())
+        elif path == "/api/agent/session":
+            qs = parse_qs(u.query)
+            session = (qs.get("session") or [""])[0]
+            lim = int((qs.get("lines") or ["20"])[0])
+            if not session:
+                self._send(400, {"error": "session query parameter required"})
+            else:
+                self._send(200, agent_session(session, lim))
         elif path == "/api/dispatch/pending":
             self._send(200, pending_dispatches())
         elif path == "/api/health":

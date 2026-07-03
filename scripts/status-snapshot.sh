@@ -18,11 +18,12 @@ detect_workers() {
   command -v tmux >/dev/null 2>&1 || return
   local first=1 out="" name display model effort dir proj status
   while IFS= read -r name; do
-    [[ "$name" == ornith || "$name" == claude-* ]] || continue
+    [[ "$name" == ornith || "$name" == hermes || "$name" == claude-* ]] || continue
     case "$name" in
       claude-belial)         display="Belial";        model="claude-opus-4.8"; effort="high";  dir="~/AdVanced-OS"; proj="AdVanced OS" ;;
       claude-obsoletebot)    display="ObsoleteBot";    model="claude-opus-4.8"; effort="high";  dir="~/ObsoleteBot"; proj="ObsoleteBot" ;;
       claude-remote-control) display="Remote Control"; model="claude-opus-4.8"; effort="high";  dir="~/ObsoleteBot"; proj="ObsoleteBot" ;;
+      hermes)                display="Azrael";         model="deepseek-v4-flash"; effort="orchestrator"; dir="~"; proj="AdVanced OS" ;;
       ornith)                display="Ornith";         model="ornith-9b";       effort="local"; dir="~";             proj="Vox" ;;
       *)                     display="$name";          model="unknown";         effort="unknown"; dir="";            proj="" ;;
     esac

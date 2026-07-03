@@ -90,6 +90,14 @@
   .st.ok { background: rgba(45,206,137,.15); color: var(--green); }
   .st.fail { background: rgba(239,68,68,.15); color: var(--red); }
   .foot { color: var(--dim); font-size: 11px; padding: 0 20px 20px; }
+  /* live output */
+  #livePanel { display: none; margin: 0 20px 16px; max-width: 1400px; }
+  #livePanel .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  #livePanel .head h2 { margin: 0; }
+  .dot.pulse { animation: pulse 1.4s ease-in-out infinite; }
+  #liveOut { max-height: 400px; overflow-y: auto; background: var(--panel2); border: 1px solid var(--line);
+             border-radius: 6px; padding: 10px 12px; margin: 0; white-space: pre-wrap; word-break: break-word;
+             font-size: 12px; line-height: 1.45; color: var(--text); }
 </style>
 </head>
 <body>
@@ -102,6 +110,14 @@
       <div id="spendLabel" class="meta" style="font-size:12px;color:var(--dim)">$0.00 / $20.00</div>
       <div id="spendBar" class="bar"><i style="width:0%"></i></div>
     </div>
+  </div>
+
+  <div id="livePanel" class="panel">
+    <div class="head">
+      <span id="liveDot" class="dot"></span>
+      <h2>Live Output — Belial</h2>
+    </div>
+    <pre id="liveOut"></pre>
   </div>
 
   <div class="grid">
@@ -138,7 +154,7 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const hhmm = ts => (ts && ts.length >= 16) ? ts.slice(11, 16) : "—";
-const ICON = {"Belial":"⚔️","Ornith":"🦅","ObsoleteBot":"🤖","Remote Control":"📡"};
+const ICON = {"Belial":"⚔️","Ornith":"🦅","ObsoleteBot":"🤖","Remote Control":"📡","Azrael":"🕊️"};
 
 let toastTimer;
 function toast(msg, isErr) {
@@ -266,7 +282,20 @@ function renderCost(c) {
     <div style="margin-top:8px" class="muted">Trend vs last week: — (placeholder)</div>`;
 }
 
+async function renderLive() {
+  const j = await getJSON("/api/agent/session?session=claude-belial&lines=20");
+  const panel = $("#livePanel"), dot = $("#liveDot"), pre = $("#liveOut");
+  // Only show the panel while Belial is actively working — idle static output is noise.
+  if (!j || j.status !== "active") { panel.style.display = "none"; return; }
+  panel.style.display = "";
+  dot.className = "dot pulse " + (j.error ? "bad" : "ok");
+  const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
+  pre.textContent = j.output || "";
+  if (atBottom) pre.scrollTop = pre.scrollHeight;
+}
+
 async function tick() {
+  renderLive();
   const [s, e, c, p] = await Promise.all([
     getJSON("/api/status"),
     getJSON("/api/events?limit=50"),
