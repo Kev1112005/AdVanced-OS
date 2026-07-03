@@ -13,20 +13,17 @@ field() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get(sys
 
 # Circuit breaker: if tripped, drain nothing this poll.
 if bash "$SCRIPT_DIR/global-stop.sh" check >/dev/null 2>&1; then
-  echo "circuit breaker tripped — skipping all dispatches"
+  # Only output on circuit-breaker events — otherwise the no-agent cron stays silent
+  echo "circuit breaker tripped — dispatch queue paused"
   exit 0
 fi
 
 shopt -s nullglob
 files=("$REQ_DIR"/*.json)
-if [[ ${#files[@]} -eq 0 ]]; then
-  echo "queue empty"
-  exit 0
-fi
+[[ ${#files[@]} -eq 0 ]] && exit 0  # silent on empty queue
 
 for req_file in "${files[@]}"; do
   if ! agent="$(field "$req_file" agent)" || [[ -z "$agent" ]]; then
-    echo "invalid JSON in $req_file — removing"
     rm -f "$req_file"
     continue
   fi
@@ -35,19 +32,16 @@ for req_file in "${files[@]}"; do
 
   # Target must be a live tmux session; unknown/dead agent → leave for a later poll.
   if ! tmux has-session -t "$agent" 2>/dev/null; then
-    echo "no session '$agent' — leaving $req_file for retry"
     continue
   fi
 
   # Don't inject while the agent is mid-thought — leave for next poll.
   if tmux capture-pane -t "$agent" -p -S -3 2>/dev/null | grep -qE 'Spinning|Baking|Hatching|Misting|Thinking|Deliberating'; then
-    echo "agent '$agent' busy — leaving $req_file for retry"
     continue
   fi
 
   # Send the task. Second Enter is the ponytail submit quirk — first Enter only inserts.
   if ! tmux send-keys -t "$agent" "$task" Enter 2>/dev/null; then
-    echo "send failed for '$agent' — logging fail, leaving for retry"
     bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event fail --agent "$agent" --detail "dispatch send failed"
     continue
   fi
@@ -56,7 +50,6 @@ for req_file in "${files[@]}"; do
 
   bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event dispatch --agent "$agent" --detail "$(echo "$task" | head -c 100)"
   rm -f "$req_file"
-  echo "dispatched → $agent ($cid)"
 done
 
 bash "$SCRIPT_DIR/status-snapshot.sh" >/dev/null 2>&1 || true
