@@ -11,12 +11,20 @@ MAX_DEPTH="${HERMES_MAX_DEPTH:-3}"
 
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# Build the workers[] JSON by walking live tmux sessions. No jq — manual JSON.
-# ponytail: only live sessions appear, so status is idle/active; "offline" can't
-# occur here. Add a known-agent roster + has-session probe if offline matters.
+# Build the workers[] JSON. No jq — manual JSON. Live tmux sessions report
+# active/idle; roster agents that run outside tmux (Azrael=Hermes, Ornith=profile)
+# report offline when their session is down so they still show on the dashboard.
 detect_workers() {
   command -v tmux >/dev/null 2>&1 || return
-  local first=1 out="" name display model effort dir proj status
+  # Known agents that may run without a tmux session. session|display|model|effort|dir|project
+  local -a KNOWN_AGENTS=(
+    "hermes|Azrael|deepseek-v4-flash|orchestrator|~|AdVanced OS"
+    "ornith|Ornith|ornith-9b|local|~|Vox"
+  )
+  local name display model effort dir proj status seen=" "
+  local -a rows=()
+
+  # 1. Live sessions (existing behavior): active/idle.
   while IFS= read -r name; do
     [[ "$name" == ornith || "$name" == hermes || "$name" == claude-* ]] || continue
     case "$name" in
@@ -31,10 +39,26 @@ detect_workers() {
     if tmux capture-pane -t "$name" -p -S -3 2>/dev/null | grep -qE 'Spinning|Baking|Hatching|Misting|Thinking'; then
       status="active"
     fi
+    rows+=("$display|$name|$status|$model|$effort|$proj|$dir")
+    seen+="$name "
+  done < <(tmux list-sessions -F '#{session_name}' 2>/dev/null)
+
+  # 2. Roster agents with no live session: offline.
+  local entry
+  for entry in "${KNOWN_AGENTS[@]}"; do
+    IFS='|' read -r name display model effort dir proj <<<"$entry"
+    [[ "$seen" == *" $name "* ]] && continue
+    rows+=("$display|$name|offline|$model|$effort|$proj|$dir")
+  done
+
+  # 3. Emit JSON.
+  local first=1 out="" r
+  for r in "${rows[@]}"; do
+    IFS='|' read -r display name status model effort proj dir <<<"$r"
     [[ $first -eq 1 ]] && first=0 || out+=$',\n    '
     out+=$(printf '{"name": "%s", "session": "%s", "status": "%s", "model": "%s", "effort": "%s", "project": "%s", "directory": "%s", "last_phase": "idle"}' \
       "$display" "$name" "$status" "$model" "$effort" "$proj" "$dir")
-  done < <(tmux list-sessions -F '#{session_name}' 2>/dev/null)
+  done
   echo "$out"
 }
 
