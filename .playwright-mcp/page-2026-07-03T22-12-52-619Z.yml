@@ -1,0 +1,199 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - heading "AdVanced OS — Mission Control" [level=1] [ref=e4]
+    - generic [ref=e5]: PASS
+    - generic [ref=e7]: $0.71 / $20.00 (3.5%)
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - heading "Live Output — Ornith" [level=2] [ref=e368]
+      - combobox [ref=e13]:
+        - option "Belial"
+        - option "Ornith" [selected]
+        - option "ObsoleteBot"
+        - option "Remote Control"
+        - option "Azrael"
+    - generic [ref=e14]: "311 + // No session yet (e.g. Ornith before its first dispatch wakes it). 312 + if (!j || j.error) { 313 + dot.className = \"dot bad\"; 314 + pre.textContent = \"Agent not online — session may be starting…\"; 315 + return; 316 + } 317 + // green pulse = active, dim = idle. 318 + dot.className = \"dot \" + (j.status === \"active\" ? \"pulse ok\" : \"\"); 319 const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30; 315 - pre.textContent = j.output || \"\"; 320 + pre.textContent = j.output || \"Waiting for output…\"; 321 if (atBottom) pre.scrollTop = pre.scrollHeight; 322 } 323 ● Now verify against the live server — check the served HTML has the selector, and that the endpoint returns output for both Belial and Ornith: Ran 1 shell command ● All endpoints and the served markup check out. Let me drive it in the browser to confirm the selector actually switches heading + output live: Called playwright ● Browser isn't installed. Let me install it — this is a UI change and the task asks for UI verification: Called playwright, ran 1 shell command ● There's a console error — let me check it and inspect the live panel state: Calling playwright… ✽ Leavening… (1m 54s · ↓ 5.7k tokens · thinking with high effort) ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ❯ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── [PONYTAIL] /rc ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents"
+  - generic [ref=e15]:
+    - generic [ref=e16]:
+      - heading "Agents" [level=2] [ref=e17]
+      - generic [ref=e369]:
+        - generic [ref=e370]:
+          - generic [ref=e371]:
+            - generic [ref=e372]: ⚔️
+            - generic [ref=e373]:
+              - generic [ref=e374]: Belial
+              - generic [ref=e375]: claude-opus-4.8 · high
+            - generic [ref=e376]: idle
+          - generic [ref=e377]: AdVanced OS · claude-belial
+          - generic [ref=e378]:
+            - textbox "Dispatch a task to Belial…" [ref=e379]
+            - button "Dispatch" [ref=e380] [cursor=pointer]
+        - generic [ref=e381]:
+          - generic [ref=e382]:
+            - generic [ref=e383]: 🤖
+            - generic [ref=e384]:
+              - generic [ref=e385]: ObsoleteBot
+              - generic [ref=e386]: claude-opus-4.8 · high
+            - generic [ref=e387]: idle
+          - generic [ref=e388]: ObsoleteBot · claude-obsoletebot
+          - generic [ref=e389]:
+            - textbox "Dispatch a task to ObsoleteBot…" [ref=e390]
+            - button "Dispatch" [ref=e391] [cursor=pointer]
+        - generic [ref=e392]:
+          - generic [ref=e393]:
+            - generic [ref=e394]: 📡
+            - generic [ref=e395]:
+              - generic [ref=e396]: Remote Control
+              - generic [ref=e397]: claude-opus-4.8 · high
+            - generic [ref=e398]: idle
+          - generic [ref=e399]: ObsoleteBot · claude-remote-control
+          - generic [ref=e400]:
+            - textbox "Dispatch a task to Remote Control…" [ref=e401]
+            - button "Dispatch" [ref=e402] [cursor=pointer]
+        - generic [ref=e403]:
+          - generic [ref=e404]:
+            - generic [ref=e405]: 🦅
+            - generic [ref=e406]:
+              - generic [ref=e407]: Ornith
+              - generic [ref=e408]: ornith-9b · local
+            - generic [ref=e409]: idle
+          - generic [ref=e410]: Vox · ornith
+          - generic [ref=e411]:
+            - textbox "Dispatch a task to Ornith…" [ref=e412]
+            - button "Dispatch" [ref=e413] [cursor=pointer]
+        - generic [ref=e414]:
+          - generic [ref=e415]:
+            - generic [ref=e416]: 🕊️
+            - generic [ref=e417]:
+              - generic [ref=e418]: Azrael
+              - generic [ref=e419]: deepseek-v4-flash · orchestrator
+            - generic [ref=e420]: offline
+          - generic [ref=e421]: AdVanced OS · hermes
+          - generic [ref=e422]:
+            - textbox "Dispatch a task to Azrael…" [ref=e423]
+            - button "Dispatch" [ref=e424] [cursor=pointer]
+    - generic [ref=e75]:
+      - heading "Pending Dispatches" [level=2] [ref=e76]
+      - generic [ref=e425]: No pending dispatches
+    - generic [ref=e79]:
+      - heading "Event Feed" [level=2] [ref=e80]
+      - generic [ref=e81]:
+        - generic [ref=e426]:
+          - generic [ref=e427]: 18:46
+          - generic [ref=e428]: system
+          - generic [ref=e429]: Hermes Agent online
+        - generic [ref=e430]:
+          - generic [ref=e431]: 18:46
+          - generic [ref=e432]: belial
+          - generic [ref=e433]: Day 2 Mission Control GUI build
+        - generic [ref=e434]:
+          - generic [ref=e435]: 18:46
+          - generic [ref=e436]: belial
+          - generic [ref=e437]: All 5 Day 2 files built
+        - generic [ref=e438]:
+          - generic [ref=e439]: 18:46
+          - generic [ref=e440]: belial
+          - generic [ref=e441]: Day 1 circuit breaker build
+        - generic [ref=e442]:
+          - generic [ref=e443]: 18:46
+          - generic [ref=e444]: belial
+          - generic [ref=e445]: "7 files: correlation-id, circuit-breaker, cost-log, global-stop"
+        - generic [ref=e446]:
+          - generic [ref=e447]: 18:46
+          - generic [ref=e448]: azrael
+          - generic [ref=e449]: "Verification: all exit codes correct"
+        - generic [ref=e450]:
+          - generic [ref=e451]: 16:13
+          - generic [ref=e452]: claude-belial
+          - generic [ref=e453]: I don't see Azrael listed as an agent in AdVancedOS; we should get you added to it as well. All I se
+        - generic [ref=e454]:
+          - generic [ref=e455]: 21:34
+          - generic [ref=e456]: claude-belial
+          - generic [ref=e457]: To test the Dispatch functionality, I want to update the "Dispatch" button from Green to Red when a
+        - generic [ref=e458]:
+          - generic [ref=e459]: 21:35
+          - generic [ref=e460]: claude-belial
+          - generic [ref=e461]: button color test — please ack
+        - generic [ref=e462]:
+          - generic [ref=e463]: 21:57
+          - generic [ref=e464]: ornith
+          - generic [ref=e465]: Are you awake?
+        - generic [ref=e466]:
+          - generic [ref=e467]: 21:57
+          - generic [ref=e468]: ornith
+          - generic [ref=e469]: Say hello from Ornith
+        - generic [ref=e470]:
+          - generic [ref=e471]: 21:57
+          - generic [ref=e472]: ornith
+          - generic [ref=e473]: Are you awake?
+        - generic [ref=e474]:
+          - generic [ref=e475]: 21:59
+          - generic [ref=e476]: claude-belial
+          - generic [ref=e477]: lock test — ignore
+        - generic [ref=e478]:
+          - generic [ref=e479]: 22:04
+          - generic [ref=e480]: ornith
+          - generic [ref=e481]: "Hello from Ornith — respond with exactly: 'Ornith is online'"
+        - generic [ref=e482]:
+          - generic [ref=e483]: 22:06
+          - generic [ref=e484]: ornith
+          - generic [ref=e485]: Test dispatch; are you awake, Ornith?
+    - generic [ref=e142]:
+      - heading "Cost — This Week" [level=2] [ref=e143]
+      - generic [ref=e144]:
+        - generic [ref=e486]:
+          - generic [ref=e487]: Weekly spend
+          - generic [ref=e488]: $0.71
+        - generic [ref=e489]:
+          - generic [ref=e490]: Cap
+          - generic [ref=e491]: $20.00
+        - generic [ref=e492]:
+          - generic [ref=e493]: Remaining
+          - generic [ref=e494]: $19.29
+        - generic [ref=e495]:
+          - generic [ref=e496]: Tasks
+          - generic [ref=e497]: "3"
+        - generic [ref=e498]: By worker
+        - generic [ref=e499]:
+          - generic [ref=e500]: claude-opus-4.8
+          - generic [ref=e501]: $0.71
+          - generic [ref=e502]: 3 task(s)
+        - generic [ref=e503]: "Trend vs last week: — (placeholder)"
+    - generic [ref=e163]:
+      - heading "Cron Jobs" [level=2] [ref=e164]
+      - table [ref=e504]:
+        - rowgroup [ref=e505]:
+          - row "Job Schedule Last run Status" [ref=e506]:
+            - columnheader "Job" [ref=e507]
+            - columnheader "Schedule" [ref=e508]
+            - columnheader "Last run" [ref=e509]
+            - columnheader "Status" [ref=e510]
+          - row "Belial Watchdog every 5m 22:10 ok" [ref=e511]:
+            - cell "Belial Watchdog" [ref=e512]
+            - cell "every 5m" [ref=e513]
+            - cell "22:10" [ref=e514]
+            - cell "ok" [ref=e515]
+          - row "ObsoleteBot Watchdog every 5m 22:10 ok" [ref=e516]:
+            - cell "ObsoleteBot Watchdog" [ref=e517]
+            - cell "every 5m" [ref=e518]
+            - cell "22:10" [ref=e519]
+            - cell "ok" [ref=e520]
+          - row "PR Pipeline every 15m 22:10 ok" [ref=e521]:
+            - cell "PR Pipeline" [ref=e522]
+            - cell "every 15m" [ref=e523]
+            - cell "22:10" [ref=e524]
+            - cell "ok" [ref=e525]
+          - row "Guild Summary 0 13 * * 3 22:10 ok" [ref=e526]:
+            - cell "Guild Summary" [ref=e527]
+            - cell "0 13 * * 3" [ref=e528]
+            - cell "22:10" [ref=e529]
+            - cell "ok" [ref=e530]
+          - row "System Health */2 * * * * 22:10 ok" [ref=e531]:
+            - cell "System Health" [ref=e532]
+            - cell "*/2 * * * *" [ref=e533]
+            - cell "22:10" [ref=e534]
+            - cell "ok" [ref=e535]
+  - generic [ref=e198]:
+    - text: Polling every 5s · snapshot 22:10 ·
+    - link "health" [ref=e199] [cursor=pointer]:
+      - /url: /api/health
