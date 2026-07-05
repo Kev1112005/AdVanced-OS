@@ -19,4 +19,14 @@ global_stop:
   message: "HERMES STOPPED by global stop flag"
 
 alerts:
-  channel: "discord:#officers"    # Where to send alert messages
+  channel: "discord:#officers"    # Legacy label — human-readable target
+  channel_id: "1523120048233906266"  # Discord channel for alerts
+  # webhook_url stays EMPTY in the committed repo — the URL is sensitive.
+  # Set the real value via the HERMES_ALERT_WEBHOOK env var, or write it to
+  # ~/.hermes/alert-webhook (gitignored). hermes-alert.sh checks those first.
+  webhook_url: ""
+  warn_at_pct: 50                 # spend % of cap → warn alert
+  alert_at_pct: 75                # spend % of cap → alert
+  critical_at_pct: 90             # spend % of cap → critical alert
+  cron_failure_threshold: 3       # N consecutive failures → alert (cron + dispatch)
+  agent_death_cooldown: 300       # seconds between duplicate agent-death alerts

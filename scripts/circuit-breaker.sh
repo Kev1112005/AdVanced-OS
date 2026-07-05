@@ -26,7 +26,9 @@ expand_home() { echo "${1/#\~/$HOME}"; }
 # read a flat key's value from the simple YAML (grep first match, strip comments/quotes)
 yaml_get() {
   local key="$1" file="$2"
-  grep -E "^[[:space:]]*${key}:" "$file" 2>/dev/null | head -n1 \
+  # `|| true` so an absent key doesn't fail the pipeline under `set -o pipefail`
+  # (grep exits 1 on no match), which would kill the script before a :-default applies.
+  { grep -E "^[[:space:]]*${key}:" "$file" 2>/dev/null || true; } | head -n1 \
     | sed -E "s/^[[:space:]]*${key}:[[:space:]]*//; s/[[:space:]]*#.*$//; s/^\"//; s/\"$//"
 }
 
@@ -49,6 +51,32 @@ weekly_spend() {
   ' "$log"
 }
 
+# Fire a Discord alert when weekly spend first crosses a warn/alert/critical threshold.
+# A flag file per level per ISO week stops re-firing on every poll. Highest crossed
+# level wins; lower levels are marked fired so they don't alert separately later.
+spend_threshold_alerts() {
+  local spend="$1" cap="$2" pct level gate week flag
+  pct="$(awk -v s="$spend" -v c="$cap" 'BEGIN{printf "%.0f", (c+0>0)? s/c*100 : 0}')"
+  if   (( pct >= CRIT_PCT ));  then level=critical; gate=$CRIT_PCT
+  elif (( pct >= ALERT_PCT )); then level=alert;    gate=$ALERT_PCT
+  elif (( pct >= WARN_PCT ));  then level=warn;     gate=$WARN_PCT
+  else return 0
+  fi
+  week="$(date +%G-W%V)"
+  flag="$ALERT_STATE_DIR/spend-$week-$level.flag"
+  [[ -f "$flag" ]] && return 0
+  mkdir -p "$ALERT_STATE_DIR"
+  case "$level" in
+    critical) touch "$ALERT_STATE_DIR/spend-$week-warn.flag" "$ALERT_STATE_DIR/spend-$week-alert.flag" "$ALERT_STATE_DIR/spend-$week-critical.flag" ;;
+    alert)    touch "$ALERT_STATE_DIR/spend-$week-warn.flag" "$ALERT_STATE_DIR/spend-$week-alert.flag" ;;
+    warn)     touch "$ALERT_STATE_DIR/spend-$week-warn.flag" ;;
+  esac
+  bash "$SCRIPT_DIR/hermes-alert.sh" send --level "$level" \
+    --title "Weekly spend ${pct}% of cap" \
+    --message "Spend \$${spend} of \$${cap} (${pct}%). ${gate}% threshold crossed." \
+    --config "$CONFIG" >/dev/null 2>&1 || true
+}
+
 [[ "${1:-}" == "check" ]] || { usage; [[ "${1:-}" =~ ^(-h|--help|help|)$ ]] && exit 0 || exit 4; }
 shift
 
@@ -69,6 +97,10 @@ STOP_FILE="$(yaml_get flag_file "$CONFIG")";     STOP_FILE="$(expand_home "${STO
 MAX_DEPTH="$(yaml_get max "$CONFIG")";            MAX_DEPTH="${MAX_DEPTH:-3}"
 CAP="$(yaml_get weekly_usd "$CONFIG")";           CAP="${CAP:-20.0}"
 LOG_FILE="$(yaml_get log_file "$CONFIG")";        LOG_FILE="$(expand_home "${LOG_FILE:-$HOME/.hermes/logs/cost-log.csv}")"
+WARN_PCT="$(yaml_get warn_at_pct "$CONFIG")";     WARN_PCT="${WARN_PCT:-50}"
+ALERT_PCT="$(yaml_get alert_at_pct "$CONFIG")";   ALERT_PCT="${ALERT_PCT:-75}"
+CRIT_PCT="$(yaml_get critical_at_pct "$CONFIG")"; CRIT_PCT="${CRIT_PCT:-90}"
+ALERT_STATE_DIR="${HERMES_ALERT_STATE:-$HOME/.hermes/alerts}"
 
 # --- 1. global stop ---
 if [[ -f "$STOP_FILE" ]]; then
@@ -88,6 +120,7 @@ fi
 
 # --- 3. spend cap ---
 spend="$(weekly_spend "$LOG_FILE")"
+spend_threshold_alerts "$spend" "$CAP"   # warn/alert/critical before the hard block
 if awk -v s="$spend" -v c="$CAP" 'BEGIN{exit !(s+0 >= c+0)}'; then
   printf '{"status":"FAIL","blocked_by":"spend_cap","detail":{"weekly_spend":%.2f,"cap":%.2f}}\n' "$spend" "$CAP"
   echo "BLOCKED: Weekly spend cap reached (\$$spend/\$$CAP)" >&2
