@@ -130,7 +130,7 @@ for req_file in "${files[@]}"; do
 
   # Don't inject while the agent is mid-thought. Retry with backoff (30s/60s/120s)
   # so a busy agent doesn't hold up its request forever; give up after the 4th failure.
-  if tmux capture-pane -t "$agent" -p -S -3 2>/dev/null | grep -qE 'Spinning|Baking|Hatching|Misting|Thinking|Deliberating'; then
+  if tmux capture-pane -t "$agent" -p -S -3 2>/dev/null | grep -qE 'Spinning|Baking|Hatching|Misting|Thinking|Deliberating|Tomfoolering'; then
     rid="$(basename "$req_file" .json)"
     mkdir -p "$RETRY_DIR"
     count=0; last=0
@@ -149,11 +149,25 @@ for req_file in "${files[@]}"; do
     continue
   fi
 
-  # Send the task. Second Enter is the ponytail submit quirk — first Enter only inserts.
-  if ! tmux send-keys -t "$agent" "$task" Enter 2>/dev/null; then
-    bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event fail --agent "$agent" --detail "dispatch send failed"
-    record_dispatch_failure "$agent"
-    continue
+  # Send the task. Large tasks (≥2K chars, typical for pipeline dispatches with
+  # accumulated context) can overflow tmux send-keys' buffer. Write to a temp file
+  # and send a short reference command instead — the established Belial pattern.
+  task_len="${#task}"
+  if (( task_len >= 2000 )); then
+    task_file="/tmp/dispatch-${agent}-$(basename "$req_file" .json).md"
+    printf '%s' "$task" > "$task_file"
+    ref_cmd="Implement the task in $task_file. Read it first, build it. Go."
+    if ! tmux send-keys -t "$agent" "$ref_cmd" Enter 2>/dev/null; then
+      bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event fail --agent "$agent" --detail "dispatch send (file ref) failed"
+      record_dispatch_failure "$agent"
+      continue
+    fi
+  else
+    if ! tmux send-keys -t "$agent" "$task" Enter 2>/dev/null; then
+      bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event fail --agent "$agent" --detail "dispatch send failed"
+      record_dispatch_failure "$agent"
+      continue
+    fi
   fi
   sleep 5
   tmux send-keys -t "$agent" Enter 2>/dev/null || true

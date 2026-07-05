@@ -10,7 +10,7 @@ PIPE_DIR="${HERMES_PIPELINE_DIR:-$HOME/.hermes/dev-pipeline}"
 MIN_WORK="${HERMES_PIPELINE_MIN_WORK:-30}"   # seconds after sent_at before "idle" counts as done
 
 # Full thinking-indicator set (superset of heartbeat's) — Hermes + Claude Code spinners.
-THINK='Spinning|Baking|Hatching|Misting|Thinking|Deliberating|Pondering|Cogitating|Accomplishing|Cascading|Channeling|Effecting|Galloping|Burrowing|Flowing'
+THINK='Spinning|Baking|Hatching|Misting|Thinking|Deliberating|Pondering|Cogitating|Accomplishing|Cascading|Channeling|Effecting|Galloping|Burrowing|Flowing|Tomfoolering'
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 epoch()   { date -u -d "$1" +%s 2>/dev/null || echo 0; }
@@ -115,6 +115,8 @@ for dir in "$PIPE_DIR"/*/; do
   pane="$(tmux capture-pane -t "$agent" -p -S -6 2>/dev/null)" || continue
   grep -qE "$THINK" <<<"$pane" && continue
   grep -qE '❯|⏵⏵'   <<<"$pane" || continue
+  # Hermes agents show a `⚕ ❯ ... Ctrl+C cancel` busy footer whose ❯ matches above; skip it.
+  grep -qE 'msg=interrupt|Ctrl\+C cancel|reasoning\.\.\.' <<<"$pane" && continue
 
   # Idle & settled: let the pane flush, then capture the full report.
   sleep 5
