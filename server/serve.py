@@ -308,6 +308,40 @@ def list_templates():
     return out
 
 
+def list_pipelines():
+    """Active and recently-completed dev pipelines, newest first. Empty-safe."""
+    base = os.path.join(HOME, ".hermes", "dev-pipeline")
+    out = []
+    if not os.path.isdir(base):
+        return out
+
+    def rd(p):
+        try:
+            with open(p, encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            return ""
+
+    for pid in sorted(os.listdir(base), reverse=True):
+        pdir = os.path.join(base, pid)
+        state = rd(os.path.join(pdir, "state"))
+        if not state:
+            continue
+        stages = {}
+        for s in ("research", "scaffold", "build"):
+            sd = os.path.join(pdir, s)
+            stages[s] = {
+                "agent": rd(os.path.join(sd, "agent")),
+                "sent_at": rd(os.path.join(sd, "sent_at")),
+                "completed_at": rd(os.path.join(sd, "completed_at")),
+                "has_output": os.path.isfile(os.path.join(sd, "output.md")),
+            }
+        out.append({"id": pid, "name": rd(os.path.join(pdir, "name")) or pid[:8],
+                    "state": state, "created_at": rd(os.path.join(pdir, "created_at")),
+                    "stages": stages})
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json"):
         if isinstance(body, (dict, list)):
@@ -371,6 +405,8 @@ class Handler(BaseHTTPRequestHandler):
                                          (qs.get("agent") or [""])[0]))
         elif path == "/api/templates":
             self._send(200, list_templates())
+        elif path == "/api/pipelines":
+            self._send(200, list_pipelines())
         elif path == "/api/agent/session":
             qs = parse_qs(u.query)
             session = (qs.get("session") or [""])[0]

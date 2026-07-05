@@ -84,7 +84,10 @@ fi
 
 shopt -s nullglob
 files=("$REQ_DIR"/*.json)
-[[ ${#files[@]} -eq 0 ]] && exit 0  # silent on empty queue
+
+# Process the queue only when non-empty, but always fall through to pipeline-advance
+# below — agents finish their stage while the queue is empty.
+if (( ${#files[@]} )); then
 
 # Priority sort: critical > high > normal > low. Prefix each file with its rank,
 # sort numerically, strip the rank back off. Filenames are UUIDs (no spaces).
@@ -101,6 +104,7 @@ for req_file in "${files[@]}"; do
   task="$(field "$req_file" task)"
   cid="$(field "$req_file" correlation_id)"
   type="$(field "$req_file" type)"
+  pipeline_id="$(field "$req_file" pipeline_id)"
 
   # Type-aware routing: notify/research surface to Kevin, not a worker session.
   # Append to the notifications log; notification-tail.sh (end of run) delivers it.
@@ -156,6 +160,24 @@ for req_file in "${files[@]}"; do
 
   bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event dispatch --agent "$agent" --detail "$(echo "$task" | head -c 100)"
   reset_dispatch_failure "$agent"
+
+  # Record pipeline delivery so pipeline-advance knows the stage was actually sent.
+  # state (researching/scaffolding/building) maps to the stage dir (research/scaffold/build).
+  if [[ "$type" == pipeline && -n "${pipeline_id:-}" ]]; then
+    pd_dir="$HOME/.hermes/dev-pipeline/$pipeline_id"
+    if [[ -d "$pd_dir" ]]; then
+      case "$(cat "$pd_dir/state" 2>/dev/null)" in
+        researching) sub=research ;; scaffolding) sub=scaffold ;; building) sub=build ;; *) sub="" ;;
+      esac
+      if [[ -n "$sub" ]]; then
+        mkdir -p "$pd_dir/$sub"
+        echo "$agent" > "$pd_dir/$sub/agent"
+        echo "$cid"   > "$pd_dir/$sub/dispatch_cid"
+        date -u +%Y-%m-%dT%H:%M:%SZ > "$pd_dir/$sub/sent_at"
+      fi
+    fi
+  fi
+
   rm -f "$req_file" "$RETRY_DIR/$(basename "$req_file" .json)"
 done
 
@@ -163,3 +185,10 @@ done
 bash "$SCRIPT_DIR/notification-tail.sh" 2>/dev/null || true
 
 bash "$SCRIPT_DIR/status-snapshot.sh" >/dev/null 2>&1 || true
+
+fi  # end non-empty-queue processing
+
+# Advance dev pipelines every poll: detect finished stages, capture output, dispatch next.
+# ponytail: runs under the same flock, so the 5s output-flush sleep can hold the lock
+# briefly per advancing pipeline — fine at handful-of-pipelines volume.
+bash "$SCRIPT_DIR/pipeline-advance.sh" >/dev/null 2>&1 || true

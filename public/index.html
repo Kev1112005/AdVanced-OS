@@ -63,6 +63,22 @@
   .req { padding: 6px 8px; border-left: 3px solid var(--blue); background: var(--panel2); margin-bottom: 4px; font-size: 12.5px; }
   .req .a { color: var(--gold); font-weight: 600; }
   .req .t { color: var(--dim); }
+  /* development pipelines */
+  .pipe { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); margin-bottom: 8px; }
+  .pipe.done { opacity: .6; }
+  .pipe .pname { font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+  .pipe .pname .check { color: var(--green); }
+  .pipe .stages { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; }
+  .pipe .stg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); }
+  .pipe .sdot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
+  .pipe .stg.completed .sdot { background: var(--green); }
+  .pipe .stg.completed { color: var(--green); }
+  .pipe .stg.active .sdot { background: var(--gold); animation: pulse 1.4s ease-in-out infinite; }
+  .pipe .stg.active { color: var(--gold); }
+  .pipe .stg.failed .sdot { background: var(--red); }
+  .pipe .stg.failed { color: var(--red); }
+  .pipe .arrow { color: var(--line); }
+  .pipe .pmeta { color: var(--dim); font-size: 11px; }
   /* toast */
   #toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel); border: 1px solid var(--green); color: var(--green); padding: 10px 16px; border-radius: 6px; opacity: 0; transform: translateY(8px); transition: .3s; pointer-events: none; }
   #toast.show { opacity: 1; transform: translateY(0); }
@@ -205,6 +221,11 @@
     </div>
 
     <div class="panel">
+      <h2>Development Pipelines</h2>
+      <div id="pipelines"><div class="muted">No active pipelines</div></div>
+    </div>
+
+    <div class="panel">
       <h2>Event Feed</h2>
       <div id="events"><div class="muted">No events yet</div></div>
     </div>
@@ -278,6 +299,47 @@ function renderPending(reqs) {
       <span class="t">${esc(hhmm(r.created_at))} · ${esc(r.priority)}</span>
       <div>${esc(r.task)}</div>
     </div>`).join("");
+}
+
+const PIPE_STAGES = [["research", "Research"], ["scaffold", "Scaffold"], ["build", "Build"]];
+const STATE_STAGE = {researching: "research", scaffolding: "scaffold", building: "build"};
+
+function elapsed(iso) {
+  if (!iso) return "";
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  if (s < 90) return Math.round(s) + "s";
+  if (s < 5400) return Math.round(s / 60) + "m";
+  return Math.round(s / 3600) + "h";
+}
+
+function renderPipelines(pipes) {
+  const box = $("#pipelines");
+  if (!pipes || !pipes.length) {
+    box.innerHTML = '<div class="muted">No active pipelines — dispatch a task to start one</div>'; return;
+  }
+  // active first, done/failed dimmed at the bottom
+  const order = p => (p.state === "done" || p.state === "failed") ? 1 : 0;
+  pipes = pipes.slice().sort((a, b) => order(a) - order(b));
+  const active = STATE_STAGE; // state -> stage key currently working
+  box.innerHTML = pipes.map(p => {
+    const cur = active[p.state];
+    const done = p.state === "done", failed = p.state === "failed";
+    const stgs = PIPE_STAGES.map(([key, label], i) => {
+      let cls = "";
+      if (p.stages?.[key]?.has_output) cls = "completed";
+      else if (key === cur) cls = failed ? "failed" : "active";
+      const arrow = i < PIPE_STAGES.length - 1 ? '<span class="arrow">→</span>' : '';
+      return `<span class="stg ${cls}"><span class="sdot"></span>${label}</span>${arrow}`;
+    }).join("");
+    const workAgent = cur ? esc(p.stages?.[cur]?.agent || "—") : "";
+    const status = done ? "done" : failed ? "failed" : `${cur} · ${workAgent}`;
+    return `
+    <div class="pipe ${done ? "done" : ""}">
+      <div class="pname">${done ? '<span class="check">✓</span>' : ''}${esc(p.name)}</div>
+      <div class="stages">${stgs}</div>
+      <div class="pmeta">${esc(status)} · ${esc(elapsed(p.created_at))}</div>
+    </div>`;
+  }).join("");
 }
 
 // Red button = a dispatch for that agent is still queued (unacknowledged).
@@ -500,17 +562,19 @@ function renderEventTrend(rows) {
 
 async function tick() {
   renderLive();
-  const [s, e, p, et] = await Promise.all([
+  const [s, e, p, et, pl] = await Promise.all([
     getJSON("/api/status"),
     getJSON("/api/events?limit=50"),
     getJSON("/api/dispatch/pending"),
     getJSON("/api/events/trend?period=7d"),
+    getJSON("/api/pipelines"),
   ]);
   renderStatus(s);
   renderEvents(e);
   renderPending(p);
   paintDispatchButtons(p);
   renderEventTrend(et);
+  renderPipelines(pl);
 }
 
 loadTemplates();
