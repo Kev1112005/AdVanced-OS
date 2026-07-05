@@ -72,7 +72,11 @@
   .pill.idle   { background: rgba(107,120,133,.15); color: var(--dim); }
   .pill.offline { background: rgba(107,120,133,.08); color: #5a6570; }
   .pill.dead, .pill.error { background: rgba(239,68,68,.15); color: var(--red); }
+  .pill.stuck { background: rgba(245,158,11,.2); color: var(--orange); animation: blink 1s step-start infinite; }
   .pill.unknown { background: rgba(245,158,11,.15); color: var(--orange); }
+  @keyframes blink { 50% { opacity: .35; } }
+  .dot.stuck { background: var(--orange); color: var(--orange); animation: blink 1s step-start infinite; }
+  .wcard.stuck .icon { animation: blink 1s step-start infinite; }
   /* events */
   #events { max-height: 340px; overflow-y: auto; }
   .ev { display: grid; grid-template-columns: 62px 90px 1fr; gap: 8px; padding: 5px 6px; border-left: 3px solid var(--dim); margin-bottom: 3px; font-size: 12.5px; background: var(--panel2); }
@@ -104,6 +108,40 @@
   #liveOut { max-height: 400px; overflow-y: auto; background: var(--panel2); border: 1px solid var(--line);
              border-radius: 6px; padding: 10px 12px; margin: 0; white-space: pre-wrap; word-break: break-word;
              font-size: 12px; line-height: 1.45; color: var(--text); }
+  /* interactive terminal input row */
+  .terminput { display: flex; gap: 6px; margin-top: 8px; align-items: stretch; }
+  .terminput textarea { flex: 1; resize: none; height: 34px; background: var(--bg); color: var(--text);
+             border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; font: inherit; font-size: 12px; }
+  .terminput textarea:focus { outline: none; border-color: var(--green); }
+  .terminput button, #tplSelect { padding: 0 12px; background: #14231a; color: var(--green);
+             border: 1px solid var(--green); border-radius: 5px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+  .terminput button:hover { background: var(--green); color: var(--bg); }
+  .terminput button:disabled { opacity: .5; cursor: default; }
+  #clearBtn { color: var(--orange); border-color: var(--orange); background: #231a14; }
+  #clearBtn:hover { background: var(--orange); color: var(--bg); }
+  #tplSelect { background: var(--bg); color: var(--text); border-color: var(--line); font-weight: 400; }
+  /* history charts: pure CSS bar rows */
+  .chartrow { display: grid; grid-template-columns: 40px 1fr 88px; gap: 8px; align-items: center; margin-bottom: 4px; font-size: 11.5px; }
+  .chartrow .lbl { color: var(--dim); }
+  .chartrow .track { background: var(--panel2); border-radius: 3px; height: 14px; overflow: hidden; border: 1px solid var(--line); position: relative; }
+  .chartrow .track > i { display: block; height: 100%; }
+  .chartrow .track > i.spend { background: var(--green); }
+  .chartrow .track > i.total { background: var(--blue); }
+  .chartrow .track > i.fail { background: var(--red); position: absolute; top: 0; left: 0; }
+  .chartrow .val { text-align: right; color: var(--text); }
+  /* template modal */
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 50; }
+  #modal.show { display: grid; }
+  #modal .box { background: var(--panel); border: 1px solid var(--green); border-radius: 8px; width: min(680px, 92vw);
+             max-height: 86vh; display: flex; flex-direction: column; padding: 16px; gap: 10px; }
+  #modal h3 { margin: 0; color: var(--gold); font-size: 14px; }
+  #modal textarea { flex: 1; min-height: 320px; resize: vertical; background: var(--bg); color: var(--text);
+             border: 1px solid var(--line); border-radius: 5px; padding: 10px; font: inherit; font-size: 12px; }
+  #modal .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  #modal .actions button { padding: 6px 14px; border-radius: 5px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
+             background: #14231a; color: var(--green); border: 1px solid var(--green); }
+  #modal .actions button.cancel { background: transparent; color: var(--dim); border-color: var(--line); }
+  #modal .actions button:hover { background: var(--green); color: var(--bg); }
 </style>
 </head>
 <body>
@@ -130,6 +168,26 @@
       </select>
     </div>
     <pre id="liveOut">Waiting for output…</pre>
+    <div class="terminput">
+      <textarea id="liveIn" placeholder="Type a command — Enter to send, Shift+Enter for newline"
+                onkeydown="liveKey(event)"></textarea>
+      <button id="sendBtn" onclick="sendLive()">Send</button>
+      <button id="clearBtn" onclick="clearLive()">/Clear</button>
+      <select id="tplSelect" onchange="loadTemplate(this.value)">
+        <option value="">Template ▼</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="modal">
+    <div class="box">
+      <h3 id="modalTitle">Template</h3>
+      <textarea id="modalText"></textarea>
+      <div class="actions">
+        <button class="cancel" onclick="closeModal()">Cancel</button>
+        <button onclick="sendTemplate()">Send to Agent</button>
+      </div>
+    </div>
   </div>
 
   <div class="grid">
@@ -156,6 +214,16 @@
     <div class="panel">
       <h2>Cron Jobs</h2>
       <div id="cron"><div class="muted">Loading…</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Cost Over Time (7d)</h2>
+      <div id="costHistory"><div class="muted">Loading…</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Event Failure Rate (7d)</h2>
+      <div id="eventTrend"><div class="muted">Loading…</div></div>
     </div>
   </div>
 
@@ -245,7 +313,7 @@ function renderStatus(s) {
   // Don't clobber a textarea the user is typing in on the 5s poll.
   if (!$("#workers").contains(document.activeElement))
   $("#workers").innerHTML = ws.length ? '<div class="workers-grid">' + ws.map(w => `
-    <div class="wcard ${w.status === "active" ? "active" : ""}">
+    <div class="wcard ${w.status === "active" ? "active" : ""} ${w.status === "stuck" ? "stuck" : ""}">
       <div class="head">
         <div class="icon">${ICON[w.name] || "🛰️"}</div>
         <div>
@@ -313,28 +381,130 @@ async function renderLive() {
     pre.textContent = "Agent not online — session may be starting…";
     return;
   }
-  // green pulse = active, dim = idle.
-  dot.className = "dot " + (j.status === "active" ? "pulse ok" : "");
+  // green pulse = active, orange blink = stuck, dim = idle.
+  dot.className = "dot " + (j.status === "active" ? "pulse ok" : j.status === "stuck" ? "stuck" : "");
   const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
   pre.textContent = j.output || "Waiting for output…";
   if (atBottom) pre.scrollTop = pre.scrollHeight;
 }
 
+const liveSession = () => $("#liveSelect").value;
+
+async function postJSON(url, body) {
+  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                             body: JSON.stringify(body)});
+  return {ok: r.ok, j: await r.json().catch(() => ({}))};
+}
+
+function liveKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendLive(); }
+}
+
+async function sendLive() {
+  const ta = $("#liveIn"), btn = $("#sendBtn");
+  const input = ta.value;
+  if (!input.trim()) { toast("Type something first", true); return; }
+  btn.disabled = true;
+  try {
+    const {ok, j} = await postJSON("/api/agent/send", {session: liveSession(), input, submit: true});
+    if (ok) { ta.value = ""; toast("Sent → " + liveSession()); renderLive(); }
+    else toast(j.error || "Send failed", true);
+  } catch (e) { toast("Send failed", true); }
+  finally { btn.disabled = false; }
+}
+
+async function clearLive() {
+  const btn = $("#clearBtn");
+  btn.disabled = true;
+  try {
+    const {ok, j} = await postJSON("/api/agent/clear", {session: liveSession()});
+    toast(ok ? "Cleared → " + liveSession() : (j.error || "Clear failed"), !ok);
+    if (ok) renderLive();
+  } catch (e) { toast("Clear failed", true); }
+  finally { btn.disabled = false; }
+}
+
+// Templates: fill the dropdown once, open a modal to edit + dispatch.
+let templates = {};
+async function loadTemplates() {
+  const list = await getJSON("/api/templates");
+  if (!list) return;
+  const sel = $("#tplSelect");
+  list.forEach(t => {
+    templates[t.name] = t;
+    const o = document.createElement("option");
+    o.value = t.name; o.textContent = t.title;
+    sel.appendChild(o);
+  });
+}
+function loadTemplate(name) {
+  const t = templates[name];
+  $("#tplSelect").value = "";
+  if (!t) return;
+  $("#modalTitle").textContent = t.title + " → " + liveSession();
+  $("#modalText").value = t.content;
+  $("#modal").classList.add("show");
+}
+function closeModal() { $("#modal").classList.remove("show"); }
+async function sendTemplate() {
+  const task = $("#modalText").value.trim();
+  if (!task) { toast("Template is empty", true); return; }
+  try {
+    const {ok, j} = await postJSON("/api/dispatch", {agent: liveSession(), task, priority: "normal"});
+    if (ok) { toast("Dispatched → " + liveSession()); closeModal(); renderPending(await getJSON("/api/dispatch/pending")); }
+    else toast(j.error || "Dispatch failed", true);
+  } catch (e) { toast("Dispatch failed", true); }
+}
+
+const dayLbl = d => new Date(d + "T00:00:00Z").toLocaleDateString("en-US", {weekday: "short", timeZone: "UTC"});
+
+function renderCostHistory(rows) {
+  const box = $("#costHistory");
+  if (!rows || !rows.length) { box.innerHTML = '<div class="muted">No cost data</div>'; return; }
+  const max = Math.max(0.01, ...rows.map(r => r.spend));
+  box.innerHTML = rows.map(r => `
+    <div class="chartrow">
+      <span class="lbl">${esc(dayLbl(r.date))}</span>
+      <span class="track"><i class="spend" style="width:${(r.spend / max * 100).toFixed(1)}%"></i></span>
+      <span class="val">$${r.spend.toFixed(2)}</span>
+    </div>`).join("");
+}
+
+function renderEventTrend(rows) {
+  const box = $("#eventTrend");
+  if (!rows || !rows.length) { box.innerHTML = '<div class="muted">No events</div>'; return; }
+  const max = Math.max(1, ...rows.map(r => r.total));
+  box.innerHTML = rows.map(r => `
+    <div class="chartrow">
+      <span class="lbl">${esc(dayLbl(r.date))}</span>
+      <span class="track">
+        <i class="total" style="width:${(r.total / max * 100).toFixed(1)}%"></i>
+        <i class="fail" style="width:${(r.failed / max * 100).toFixed(1)}%"></i>
+      </span>
+      <span class="val">${r.failed}/${r.total}</span>
+    </div>`).join("");
+}
+
 async function tick() {
   renderLive();
-  const [s, e, c, p] = await Promise.all([
+  const [s, e, c, p, ch, et] = await Promise.all([
     getJSON("/api/status"),
     getJSON("/api/events?limit=50"),
     getJSON("/api/cost/summary"),
     getJSON("/api/dispatch/pending"),
+    getJSON("/api/cost/history?period=7d"),
+    getJSON("/api/events/trend?period=7d"),
   ]);
   renderStatus(s);
   renderEvents(e);
   renderCost(c);
   renderPending(p);
   paintDispatchButtons(p);
+  renderCostHistory(ch);
+  renderEventTrend(et);
 }
 
+loadTemplates();
 tick();
 setInterval(tick, 5000);
 </script>

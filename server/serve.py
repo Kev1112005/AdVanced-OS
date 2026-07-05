@@ -27,6 +27,7 @@ from urllib.parse import urlparse, parse_qs
 HOME = os.path.expanduser("~")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PUBLIC = os.path.join(BASE, "public")
+TEMPLATES_DIR = os.path.join(BASE, "docs", "task-templates")
 
 STATUS_FILE = os.environ.get("HERMES_STATUS_FILE", f"{HOME}/.hermes/status/current.json")
 EVENT_LOG = os.environ.get("HERMES_EVENT_LOG", f"{HOME}/.hermes/logs/agent-events.log")
@@ -134,9 +135,10 @@ def agent_session(session, lines=20):
             return {"session": session, "error": "session not found",
                     "output": "", "status": "unknown"}
         raw = result.stdout
-        status = "active" if re.search(
-            r"Spinning|Baking|Hatching|Misting|Thinking|Deliberating", raw
-        ) else "idle"
+        if re.search(r"Spinning|Baking|Hatching|Misting|Thinking|Deliberating", raw):
+            status = "active"
+        else:
+            status = "idle"
         # Strip ANSI escape sequences
         clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", raw)
         return {"session": session, "status": status, "output": clean}
@@ -177,6 +179,132 @@ def create_dispatch(body):
     return 200, {"status": "queued", "request_id": rid, "correlation_id": cid}
 
 
+def _session_alive(session):
+    r = subprocess.run(["tmux", "has-session", "-t", session],
+                       capture_output=True, timeout=5)
+    return r.returncode == 0
+
+
+def send_keys(body):
+    """Send input to a live tmux session. Returns (code, dict)."""
+    try:
+        data = json.loads(body or b"{}")
+    except ValueError:
+        return 400, {"error": "invalid JSON body"}
+    session = str(data.get("session", "")).strip()
+    text = str(data.get("input", ""))
+    submit = bool(data.get("submit", True))
+    if not session:
+        return 400, {"error": "session is required"}
+    if not text.strip():
+        return 400, {"error": "input is empty"}
+    try:
+        if not _session_alive(session):
+            return 400, {"error": f"session '{session}' not found"}
+        subprocess.run(["tmux", "send-keys", "-t", session, text], timeout=5, check=True)
+        if submit:
+            # ponytail: two-Enter quirk — first inserts, second (after 5s) submits.
+            # Same as dispatch-consumer.sh; upgrade path is a real key protocol if this drifts.
+            subprocess.run(["tmux", "send-keys", "-t", session, "Enter"], timeout=5, check=True)
+            time.sleep(5)
+            subprocess.run(["tmux", "send-keys", "-t", session, "Enter"], timeout=5)
+        return 200, {"status": "sent", "session": session}
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        return 400, {"error": f"send failed: {e}"}
+
+
+def clear_session(body):
+    """Send /clear + Enter to a live tmux session. Returns (code, dict)."""
+    try:
+        data = json.loads(body or b"{}")
+    except ValueError:
+        return 400, {"error": "invalid JSON body"}
+    session = str(data.get("session", "")).strip()
+    if not session:
+        return 400, {"error": "session is required"}
+    try:
+        if not _session_alive(session):
+            return 400, {"error": f"session '{session}' not found"}
+        subprocess.run(["tmux", "send-keys", "-t", session, "/clear"], timeout=5, check=True)
+        subprocess.run(["tmux", "send-keys", "-t", session, "Enter"], timeout=5, check=True)
+        time.sleep(5)
+        subprocess.run(["tmux", "send-keys", "-t", session, "Enter"], timeout=5)
+        return 200, {"status": "cleared", "session": session}
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        return 400, {"error": f"clear failed: {e}"}
+
+
+def _days(period):
+    """Parse '7d' -> 7. Defaults to 7, clamps to 1..90."""
+    m = re.match(r"(\d+)", str(period or ""))
+    n = int(m.group(1)) if m else 7
+    return max(1, min(90, n))
+
+
+def cost_history(period="7d"):
+    """Per-day spend + task count for the last N days, oldest first. Empty-safe."""
+    n = _days(period)
+    today = datetime.now(timezone.utc).date()
+    buckets = {(today - timedelta(days=i)).isoformat(): {"spend": 0.0, "tasks": 0}
+               for i in range(n)}
+    if os.path.exists(COST_LOG):
+        with open(COST_LOG, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                try:
+                    d = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")).date().isoformat()
+                    cost = float(row["cost_usd"])
+                except (ValueError, KeyError, TypeError):
+                    continue
+                if d in buckets:
+                    buckets[d]["spend"] = round(buckets[d]["spend"] + cost, 2)
+                    buckets[d]["tasks"] += 1
+    return [{"date": d, "spend": buckets[d]["spend"], "tasks": buckets[d]["tasks"]}
+            for d in sorted(buckets)]
+
+
+def events_trend(period="7d", agent=""):
+    """Per-day total/failed/circuit_break event counts, oldest first. Empty-safe."""
+    n = _days(period)
+    today = datetime.now(timezone.utc).date()
+    buckets = {(today - timedelta(days=i)).isoformat():
+               {"total": 0, "failed": 0, "circuit_breaks": 0} for i in range(n)}
+    fails = {"fail", "qa_fail", "deny"}
+    if os.path.exists(EVENT_LOG):
+        with open(EVENT_LOG, encoding="utf-8") as f:
+            for line in f.read().splitlines():
+                parts = line.split("|", 4)
+                if len(parts) != 5:
+                    continue
+                ts, _cid, event, ag, _detail = parts
+                if agent and ag != agent:
+                    continue
+                d = ts[:10]
+                if d not in buckets:
+                    continue
+                buckets[d]["total"] += 1
+                if event in fails:
+                    buckets[d]["failed"] += 1
+                if event == "circuit_break":
+                    buckets[d]["circuit_breaks"] += 1
+    return [{"date": d, **buckets[d]} for d in sorted(buckets)]
+
+
+def list_templates():
+    """Task templates from docs/task-templates/*.md. Empty-safe."""
+    out = []
+    if os.path.isdir(TEMPLATES_DIR):
+        for fn in sorted(os.listdir(TEMPLATES_DIR)):
+            if not fn.endswith(".md"):
+                continue
+            name = fn[:-3]
+            with open(os.path.join(TEMPLATES_DIR, fn), encoding="utf-8") as f:
+                content = f.read()
+            out.append({"name": name,
+                        "title": name.replace("-", " ").title(),
+                        "content": content})
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json"):
         if isinstance(body, (dict, list)):
@@ -196,11 +324,15 @@ class Handler(BaseHTTPRequestHandler):
         self._send(204, "")
 
     def do_POST(self):
-        if urlparse(self.path).path == "/api/dispatch":
-            n = int(self.headers.get("Content-Length", 0) or 0)
-            body = self.rfile.read(n) if n else b""
-            code, resp = create_dispatch(body)
-            self._send(code, resp)
+        path = urlparse(self.path).path
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        body = self.rfile.read(n) if n else b""
+        if path == "/api/dispatch":
+            self._send(*create_dispatch(body))
+        elif path == "/api/agent/send":
+            self._send(*send_keys(body))
+        elif path == "/api/agent/clear":
+            self._send(*clear_session(body))
         else:
             self._send(404, {"error": "not found"})
 
@@ -227,6 +359,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, read_events(limit))
         elif path == "/api/cost/summary":
             self._send(200, cost_summary())
+        elif path == "/api/cost/history":
+            self._send(200, cost_history((parse_qs(u.query).get("period", ["7d"])[0])))
+        elif path == "/api/events/trend":
+            qs = parse_qs(u.query)
+            self._send(200, events_trend(qs.get("period", ["7d"])[0],
+                                         (qs.get("agent") or [""])[0]))
+        elif path == "/api/templates":
+            self._send(200, list_templates())
         elif path == "/api/agent/session":
             qs = parse_qs(u.query)
             session = (qs.get("session") or [""])[0]

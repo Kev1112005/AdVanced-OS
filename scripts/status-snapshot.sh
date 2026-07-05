@@ -33,10 +33,8 @@ detect_workers() {
       ezekiel)               display="Ezekiel";       model="deepseek-v4-flash"; effort="research"; dir="~";           proj="AdVanced OS" ;;
       *)                     display="$name";          model="unknown";         effort="unknown"; dir="";            proj="" ;;
     esac
-    status="idle"
-    if tmux capture-pane -t "$name" -p -S -3 2>/dev/null | grep -qE 'Spinning|Baking|Hatching|Misting|Thinking'; then
-      status="active"
-    fi
+    # active / idle / stuck from the heartbeat probe (stuck = wedged at prompt).
+    status="$(bash "$SCRIPT_DIR/heartbeat-check.sh" status "$name" 2>/dev/null || echo idle)"
     rows+=("$display|$name|$status|$model|$effort|$proj|$dir")
     seen+="$name "
   done < <(tmux list-sessions -F '#{session_name}' 2>/dev/null)
