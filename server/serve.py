@@ -31,20 +31,21 @@ TEMPLATES_DIR = os.path.join(BASE, "docs", "task-templates")
 
 STATUS_FILE = os.environ.get("HERMES_STATUS_FILE", f"{HOME}/.hermes/status/current.json")
 EVENT_LOG = os.environ.get("HERMES_EVENT_LOG", f"{HOME}/.hermes/logs/agent-events.log")
-COST_LOG = os.environ.get("HERMES_COST_LOG", f"{HOME}/.hermes/logs/cost-log.csv")
+# COST_LOG = os.environ.get("HERMES_COST_LOG", f"{HOME}/.hermes/logs/cost-log.csv")  # cost tracking disabled
 REQ_DIR = os.environ.get("HERMES_REQUESTS_DIR", f"{HOME}/.hermes/requests")
 NOTIF_LOG = os.environ.get("HERMES_NOTIF_LOG", f"{HOME}/.hermes/notifications.log")
-CAP = float(os.environ.get("HERMES_WEEKLY_CAP", "20.0"))
+# CAP = float(os.environ.get("HERMES_WEEKLY_CAP", "20.0"))  # cost tracking disabled
 PORT = int(os.environ.get("MISSION_CONTROL_PORT", "3001"))
 
 START = time.time()
 
 
-def week_start():
-    """Monday 00:00 UTC of the current week."""
-    now = datetime.now(timezone.utc)
-    d = now - timedelta(days=now.weekday())
-    return d.replace(hour=0, minute=0, second=0, microsecond=0)
+# cost tracking disabled
+# def week_start():
+#     """Monday 00:00 UTC of the current week."""
+#     now = datetime.now(timezone.utc)
+#     d = now - timedelta(days=now.weekday())
+#     return d.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def read_events(limit):
@@ -80,32 +81,33 @@ def read_notifications(limit):
     return out
 
 
-def cost_summary():
-    """Weekly rollup parsed live from the CSV. Empty-safe."""
-    result = {"total_spend": 0.0, "cap": CAP, "remaining": CAP,
-              "task_count": 0, "by_worker": {}}
-    if not os.path.exists(COST_LOG):
-        return result
-    ws = week_start()
-    total = 0.0
-    with open(COST_LOG, newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            try:
-                ts = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
-                cost = float(row["cost_usd"])
-            except (ValueError, KeyError, TypeError):
-                continue
-            if ts < ws:
-                continue
-            total += cost
-            result["task_count"] += 1
-            w = row.get("model", "unknown")
-            bw = result["by_worker"].setdefault(w, {"spend": 0.0, "tasks": 0})
-            bw["spend"] = round(bw["spend"] + cost, 2)
-            bw["tasks"] += 1
-    result["total_spend"] = round(total, 2)
-    result["remaining"] = round(CAP - total, 2)
-    return result
+# cost tracking disabled
+# def cost_summary():
+#     """Weekly rollup parsed live from the CSV. Empty-safe."""
+#     result = {"total_spend": 0.0, "cap": CAP, "remaining": CAP,
+#               "task_count": 0, "by_worker": {}}
+#     if not os.path.exists(COST_LOG):
+#         return result
+#     ws = week_start()
+#     total = 0.0
+#     with open(COST_LOG, newline="", encoding="utf-8") as f:
+#         for row in csv.DictReader(f):
+#             try:
+#                 ts = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+#                 cost = float(row["cost_usd"])
+#             except (ValueError, KeyError, TypeError):
+#                 continue
+#             if ts < ws:
+#                 continue
+#             total += cost
+#             result["task_count"] += 1
+#             w = row.get("model", "unknown")
+#             bw = result["by_worker"].setdefault(w, {"spend": 0.0, "tasks": 0})
+#             bw["spend"] = round(bw["spend"] + cost, 2)
+#             bw["tasks"] += 1
+#     result["total_spend"] = round(total, 2)
+#     result["remaining"] = round(CAP - total, 2)
+#     return result
 
 
 def pending_dispatches():
@@ -241,25 +243,26 @@ def _days(period):
     return max(1, min(90, n))
 
 
-def cost_history(period="7d"):
-    """Per-day spend + task count for the last N days, oldest first. Empty-safe."""
-    n = _days(period)
-    today = datetime.now(timezone.utc).date()
-    buckets = {(today - timedelta(days=i)).isoformat(): {"spend": 0.0, "tasks": 0}
-               for i in range(n)}
-    if os.path.exists(COST_LOG):
-        with open(COST_LOG, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                try:
-                    d = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")).date().isoformat()
-                    cost = float(row["cost_usd"])
-                except (ValueError, KeyError, TypeError):
-                    continue
-                if d in buckets:
-                    buckets[d]["spend"] = round(buckets[d]["spend"] + cost, 2)
-                    buckets[d]["tasks"] += 1
-    return [{"date": d, "spend": buckets[d]["spend"], "tasks": buckets[d]["tasks"]}
-            for d in sorted(buckets)]
+# cost tracking disabled
+# def cost_history(period="7d"):
+#     """Per-day spend + task count for the last N days, oldest first. Empty-safe."""
+#     n = _days(period)
+#     today = datetime.now(timezone.utc).date()
+#     buckets = {(today - timedelta(days=i)).isoformat(): {"spend": 0.0, "tasks": 0}
+#                for i in range(n)}
+#     if os.path.exists(COST_LOG):
+#         with open(COST_LOG, newline="", encoding="utf-8") as f:
+#             for row in csv.DictReader(f):
+#                 try:
+#                     d = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")).date().isoformat()
+#                     cost = float(row["cost_usd"])
+#                 except (ValueError, KeyError, TypeError):
+#                     continue
+#                 if d in buckets:
+#                     buckets[d]["spend"] = round(buckets[d]["spend"] + cost, 2)
+#                     buckets[d]["tasks"] += 1
+#     return [{"date": d, "spend": buckets[d]["spend"], "tasks": buckets[d]["tasks"]}
+#             for d in sorted(buckets)]
 
 
 def events_trend(period="7d", agent=""):
@@ -357,10 +360,11 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/events":
             limit = int((parse_qs(u.query).get("limit", ["50"])[0]) or 50)
             self._send(200, read_events(limit))
-        elif path == "/api/cost/summary":
-            self._send(200, cost_summary())
-        elif path == "/api/cost/history":
-            self._send(200, cost_history((parse_qs(u.query).get("period", ["7d"])[0])))
+        # cost tracking disabled
+        # elif path == "/api/cost/summary":
+        #     self._send(200, cost_summary())
+        # elif path == "/api/cost/history":
+        #     self._send(200, cost_history((parse_qs(u.query).get("period", ["7d"])[0])))
         elif path == "/api/events/trend":
             qs = parse_qs(u.query)
             self._send(200, events_trend(qs.get("period", ["7d"])[0],

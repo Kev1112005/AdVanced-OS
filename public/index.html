@@ -150,10 +150,12 @@
     <h1>AdVanced OS <small>— Mission Control</small></h1>
     <span id="cbBadge" class="badge">—</span>
     <div class="spacer"></div>
+    <!-- cost tracking disabled
     <div class="spendbar">
       <div id="spendLabel" class="meta" style="font-size:12px;color:var(--dim)">$0.00 / $20.00</div>
       <div id="spendBar" class="bar"><i style="width:0%"></i></div>
     </div>
+    -->
   </div>
 
   <div id="livePanel" class="panel">
@@ -206,20 +208,24 @@
       <div id="events"><div class="muted">No events yet</div></div>
     </div>
 
+    <!-- cost tracking disabled
     <div class="panel">
       <h2>Cost — This Week</h2>
       <div id="cost"><div class="muted">No cost data yet</div></div>
     </div>
+    -->
 
     <div class="panel">
       <h2>Cron Jobs</h2>
       <div id="cron"><div class="muted">Loading…</div></div>
     </div>
 
+    <!-- cost tracking disabled
     <div class="panel">
       <h2>Cost Over Time (7d)</h2>
       <div id="costHistory"><div class="muted">Loading…</div></div>
     </div>
+    -->
 
     <div class="panel">
       <h2>Event Failure Rate (7d)</h2>
@@ -302,12 +308,14 @@ function renderStatus(s) {
   $("#cbBadge").textContent = tripped ? "TRIPPED" : "PASS";
   $("#cbBadge").className = "badge " + (tripped ? "trip" : "pass");
 
+  /* cost tracking disabled
   const sp = cb.spend || {};
   const pct = Math.min(100, sp.pct || 0);
   $("#spendLabel").textContent = `$${(sp.weekly ?? 0).toFixed(2)} / $${(sp.cap ?? 0).toFixed(2)} (${(sp.pct ?? 0).toFixed(1)}%)`;
   const bar = $("#spendBar");
   bar.className = "bar" + (pct >= 100 ? " over" : pct >= 75 ? " hot" : "");
   bar.firstElementChild.style.width = pct + "%";
+  */
 
   const ws = s.workers || [];
   // Don't clobber a textarea the user is typing in on the 5s poll.
@@ -353,6 +361,7 @@ function renderEvents(evs) {
   box.scrollTop = box.scrollHeight;
 }
 
+/* cost tracking disabled
 function renderCost(c) {
   const box = $("#cost");
   if (!c || (!c.task_count && !Object.keys(c.by_worker || {}).length)) {
@@ -370,6 +379,7 @@ function renderCost(c) {
     ${workers || '<div class="muted">—</div>'}
     <div style="margin-top:8px" class="muted">Trend vs last week: — (placeholder)</div>`;
 }
+*/
 
 async function renderLive() {
   const sel = $("#liveSelect"), dot = $("#liveDot"), pre = $("#liveOut");
@@ -458,6 +468,7 @@ async function sendTemplate() {
 
 const dayLbl = d => new Date(d + "T00:00:00Z").toLocaleDateString("en-US", {weekday: "short", timeZone: "UTC"});
 
+/* cost tracking disabled
 function renderCostHistory(rows) {
   const box = $("#costHistory");
   if (!rows || !rows.length) { box.innerHTML = '<div class="muted">No cost data</div>'; return; }
@@ -469,6 +480,7 @@ function renderCostHistory(rows) {
       <span class="val">$${r.spend.toFixed(2)}</span>
     </div>`).join("");
 }
+*/
 
 function renderEventTrend(rows) {
   const box = $("#eventTrend");
@@ -487,20 +499,16 @@ function renderEventTrend(rows) {
 
 async function tick() {
   renderLive();
-  const [s, e, c, p, ch, et] = await Promise.all([
+  const [s, e, p, et] = await Promise.all([
     getJSON("/api/status"),
     getJSON("/api/events?limit=50"),
-    getJSON("/api/cost/summary"),
     getJSON("/api/dispatch/pending"),
-    getJSON("/api/cost/history?period=7d"),
     getJSON("/api/events/trend?period=7d"),
   ]);
   renderStatus(s);
   renderEvents(e);
-  renderCost(c);
   renderPending(p);
   paintDispatchButtons(p);
-  renderCostHistory(ch);
   renderEventTrend(et);
 }
 
