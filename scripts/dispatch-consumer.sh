@@ -6,6 +6,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REQ_DIR="${HERMES_REQUESTS_DIR:-$HOME/.hermes/requests}"
+RETRY_DIR="$REQ_DIR/.retries"
+NOTIF_LOG="${HERMES_NOTIF_LOG:-$HOME/.hermes/notifications.log}"
+
+# priority rank for the sort (lower = drained first); backoff seconds by failure count.
+prio_rank() { case "$1" in critical) echo 0;; high) echo 1;; low) echo 3;; *) echo 2;; esac; }
+retry_backoff() { case "$1" in 1) echo 30;; 2) echo 60;; 3) echo 120;; *) echo 0;; esac; }
 
 # Serial channel: only one consumer drains the queue at a time. A concurrent run
 # (manual + watchdog) would re-inject the same task. Non-blocking, so a second
@@ -16,6 +22,26 @@ flock -n 9 || exit 0
 # ponytail: field extractor via python3 stdlib — one interpreter start per field is fine
 # at queue volumes of a handful of files. Batch-parse if the queue ever gets deep.
 field() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get(sys.argv[2],""))' "$1" "$2"; }
+
+# --- alerting (Feature Gap 1.1) ---
+ALERT_STATE_DIR="${HERMES_ALERT_STATE:-$HOME/.hermes/alerts}"
+CB_CONFIG="$SCRIPT_DIR/../config/circuit-breaker.yaml"
+DISPATCH_FAIL_THRESHOLD="$(grep -E '^[[:space:]]*cron_failure_threshold:' "$CB_CONFIG" 2>/dev/null | head -n1 | sed -E 's/.*:[[:space:]]*//; s/[[:space:]]*#.*$//')"
+DISPATCH_FAIL_THRESHOLD="${DISPATCH_FAIL_THRESHOLD:-3}"
+alert() { bash "$SCRIPT_DIR/hermes-alert.sh" send --level "$1" --title "$2" --message "$3" >/dev/null 2>&1 || true; }
+# Count consecutive dispatch failures per agent; alert once the threshold is hit, then reset.
+record_dispatch_failure() {
+  local agent="$1" f n
+  mkdir -p "$ALERT_STATE_DIR"
+  f="$ALERT_STATE_DIR/dispatch-fail-$agent"
+  n=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 ))
+  echo "$n" > "$f"
+  if (( n >= DISPATCH_FAIL_THRESHOLD )); then
+    alert alert "Dispatch failing: $agent" "$n consecutive dispatch failures for $agent — retries exhausted or session stuck. Manual check needed."
+    echo 0 > "$f"   # re-alert only after another N failures
+  fi
+}
+reset_dispatch_failure() { rm -f "$ALERT_STATE_DIR/dispatch-fail-$1" 2>/dev/null || true; }
 
 # Ezekiel runs as `hermes -p ezekiel`, not a persistent tmux session. Launch it on
 # demand in tmux so dispatches land and its output shows on the dashboard.
@@ -40,16 +66,32 @@ wake_ezekiel() {
   return 1
 }
 
-# Circuit breaker: if tripped, drain nothing this poll.
+# Circuit breaker: if tripped, drain nothing this poll. Alert only on the set/clear
+# edge (state file), so a 60s cron poll can't spam Kevin while the flag stays on.
+STOP_STATE="$ALERT_STATE_DIR/global-stop.state"
 if bash "$SCRIPT_DIR/global-stop.sh" check >/dev/null 2>&1; then
+  if [[ ! -f "$STOP_STATE" ]]; then
+    mkdir -p "$ALERT_STATE_DIR"; touch "$STOP_STATE"
+    alert critical "Global stop engaged" "Circuit breaker tripped — dispatch queue paused until the stop flag clears."
+  fi
   # Only output on circuit-breaker events — otherwise the no-agent cron stays silent
   echo "circuit breaker tripped — dispatch queue paused"
   exit 0
+elif [[ -f "$STOP_STATE" ]]; then
+  rm -f "$STOP_STATE"
+  alert warn "Global stop cleared" "Dispatch queue resumed."
 fi
 
 shopt -s nullglob
 files=("$REQ_DIR"/*.json)
 [[ ${#files[@]} -eq 0 ]] && exit 0  # silent on empty queue
+
+# Priority sort: critical > high > normal > low. Prefix each file with its rank,
+# sort numerically, strip the rank back off. Filenames are UUIDs (no spaces).
+mapfile -t files < <(
+  for f in "${files[@]}"; do echo "$(prio_rank "$(field "$f" priority)") $f"; done \
+    | sort -n -k1,1 | cut -d' ' -f2-
+)
 
 for req_file in "${files[@]}"; do
   if ! agent="$(field "$req_file" agent)" || [[ -z "$agent" ]]; then
@@ -58,33 +100,66 @@ for req_file in "${files[@]}"; do
   fi
   task="$(field "$req_file" task)"
   cid="$(field "$req_file" correlation_id)"
+  type="$(field "$req_file" type)"
+
+  # Type-aware routing: notify/research surface to Kevin, not a worker session.
+  # Append to the notifications log; notification-tail.sh (end of run) delivers it.
+  if [[ "$type" == notify || "$type" == research ]]; then
+    mkdir -p "$(dirname "$NOTIF_LOG")"
+    printf '%s|%s|%s|%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" info "$agent" "${task//[|$'\n\r']/ }" >> "$NOTIF_LOG"
+    bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event "$type" --agent "$agent" --detail "$(echo "$task" | head -c 100)" 2>/dev/null || true
+    rm -f "$req_file"
+    continue
+  fi
 
   # Ezekiel isn't a persistent session — wake it on demand. Other agents must
   # already be a live tmux session; unknown/dead agent → leave for a later poll.
   if [[ "$agent" == ezekiel ]]; then
     if ! wake_ezekiel; then
       bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event fail --agent ezekiel --detail "wake failed / not ready within 60s"
+      record_dispatch_failure ezekiel
       continue
     fi
   elif ! tmux has-session -t "$agent" 2>/dev/null; then
     continue
   fi
 
-  # Don't inject while the agent is mid-thought — leave for next poll.
+  # Don't inject while the agent is mid-thought. Retry with backoff (30s/60s/120s)
+  # so a busy agent doesn't hold up its request forever; give up after the 4th failure.
   if tmux capture-pane -t "$agent" -p -S -3 2>/dev/null | grep -qE 'Spinning|Baking|Hatching|Misting|Thinking|Deliberating'; then
+    rid="$(basename "$req_file" .json)"
+    mkdir -p "$RETRY_DIR"
+    count=0; last=0
+    [[ -f "$RETRY_DIR/$rid" ]] && read -r count last < "$RETRY_DIR/$rid"
+    now="$(date +%s)"
+    # still inside the backoff window for the current count — don't count this probe
+    (( now - last < $(retry_backoff "$count") )) && continue
+    count=$((count + 1))
+    if (( count >= 4 )); then
+      bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event circuit_break --agent "$agent" --detail "dispatch abandoned: agent busy through 4 retries"
+      record_dispatch_failure "$agent"
+      rm -f "$req_file" "$RETRY_DIR/$rid"
+      continue
+    fi
+    echo "$count $now" > "$RETRY_DIR/$rid"
     continue
   fi
 
   # Send the task. Second Enter is the ponytail submit quirk — first Enter only inserts.
   if ! tmux send-keys -t "$agent" "$task" Enter 2>/dev/null; then
     bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event fail --agent "$agent" --detail "dispatch send failed"
+    record_dispatch_failure "$agent"
     continue
   fi
   sleep 5
   tmux send-keys -t "$agent" Enter 2>/dev/null || true
 
   bash "$SCRIPT_DIR/agent-event.sh" log --correlation-id "$cid" --event dispatch --agent "$agent" --detail "$(echo "$task" | head -c 100)"
-  rm -f "$req_file"
+  reset_dispatch_failure "$agent"
+  rm -f "$req_file" "$RETRY_DIR/$(basename "$req_file" .json)"
 done
+
+# Surface any undelivered notifications to Kevin (no_agent cron captures this stdout).
+bash "$SCRIPT_DIR/notification-tail.sh" 2>/dev/null || true
 
 bash "$SCRIPT_DIR/status-snapshot.sh" >/dev/null 2>&1 || true

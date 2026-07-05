@@ -32,6 +32,7 @@ STATUS_FILE = os.environ.get("HERMES_STATUS_FILE", f"{HOME}/.hermes/status/curre
 EVENT_LOG = os.environ.get("HERMES_EVENT_LOG", f"{HOME}/.hermes/logs/agent-events.log")
 COST_LOG = os.environ.get("HERMES_COST_LOG", f"{HOME}/.hermes/logs/cost-log.csv")
 REQ_DIR = os.environ.get("HERMES_REQUESTS_DIR", f"{HOME}/.hermes/requests")
+NOTIF_LOG = os.environ.get("HERMES_NOTIF_LOG", f"{HOME}/.hermes/notifications.log")
 CAP = float(os.environ.get("HERMES_WEEKLY_CAP", "20.0"))
 PORT = int(os.environ.get("MISSION_CONTROL_PORT", "3001"))
 
@@ -59,6 +60,22 @@ def read_events(limit):
         ts, cid, event, agent, detail = parts
         out.append({"ts": ts, "correlation_id": cid, "event": event,
                     "agent": agent, "detail": detail})
+    return out
+
+
+def read_notifications(limit):
+    """Last `limit` notifications (ts|level|source|message) as dicts. Empty-safe."""
+    if not os.path.exists(NOTIF_LOG):
+        return []
+    with open(NOTIF_LOG, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    out = []
+    for line in lines[-limit:]:
+        parts = line.split("|", 3)
+        if len(parts) != 4:
+            continue
+        ts, level, source, message = parts
+        out.append({"ts": ts, "level": level, "source": source, "message": message})
     return out
 
 
@@ -218,6 +235,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "session query parameter required"})
             else:
                 self._send(200, agent_session(session, lim))
+        elif path == "/api/notifications":
+            limit = int((parse_qs(u.query).get("limit", ["50"])[0]) or 50)
+            self._send(200, read_notifications(limit))
         elif path == "/api/dispatch/pending":
             self._send(200, pending_dispatches())
         elif path == "/api/health":
