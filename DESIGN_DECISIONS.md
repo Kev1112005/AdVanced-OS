@@ -105,11 +105,13 @@
 
 **Rationale:** Correlation ID + grep is sufficient for a one-person system. A tracing DB adds infrastructure (collector, storage, query layer) for marginal benefit. When structured queries become necessary, the flat file can be imported into anything.
 
-### Decision: GUI Is the Primary Interface
+### Decision: GUI Is the Primary Interface and Local Control Surface
 
-**Chosen:** Mission Control GUI for awareness (what's running, what happened, what it cost). Discord CLI for control (dispatch, approve, stop).
+**Chosen:** Mission Control GUI for awareness and trusted local control (dispatch, follow-up, pause, interrupt, restart, deploy decisions, and global stop). Discord CLI remains the complementary remote control surface.
 
-**Rationale:** An operating system without a visible interface isn't an OS — it's a backend. The GUI provides at-a-glance awareness that terminal output cannot. The CLI handles control actions that are faster by keyboard. They are complementary, not competing.
+**Rationale:** An operating system without a visible interface isn't an OS — it's a backend. The GUI provides at-a-glance awareness and direct operator actions while the operator is at the host. The Discord CLI remains useful on mobile and for actions faster by conversation. Both use the same durable queue and disk-backed safety state.
+
+See [Decision 008](docs/decisions/008-provider-registry-and-gui-control.md) for the provider registry and control-boundary details.
 
 ### Decision: Mission Control Is a Single Static HTML Page, Not a Web App
 

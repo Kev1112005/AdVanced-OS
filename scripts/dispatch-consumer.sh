@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REQ_DIR="${HERMES_REQUESTS_DIR:-$HOME/.hermes/requests}"
 RETRY_DIR="$REQ_DIR/.retries"
 NOTIF_LOG="${HERMES_NOTIF_LOG:-$HOME/.hermes/notifications.log}"
+PAUSE_DIR="${HERMES_PAUSED_AGENTS_DIR:-$HOME/.hermes/paused-agents}"
 
 # priority rank for the sort (lower = drained first); backoff seconds by failure count.
 prio_rank() { case "$1" in critical) echo 0;; high) echo 1;; low) echo 3;; *) echo 2;; esac; }
@@ -105,6 +106,13 @@ for req_file in "${files[@]}"; do
   cid="$(field "$req_file" correlation_id)"
   type="$(field "$req_file" type)"
   pipeline_id="$(field "$req_file" pipeline_id)"
+  agent_id="$(field "$req_file" agent_id)"
+
+  # A paused agent keeps its queued orders durable but receives no new input.
+  # Mission Control writes the pause flag; resume removes it.
+  if [[ -f "$PAUSE_DIR/${agent_id:-$agent}" ]]; then
+    continue
+  fi
 
   # Type-aware routing: notify/research surface to Kevin, not a worker session.
   # Append to the notifications log; notification-tail.sh (end of run) delivers it.

@@ -20,11 +20,11 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 │                       KEVIN                                   │
 │  ┌─────────────────────┐    ┌──────────────────────────────┐ │
 │  │ Mission Control GUI  │    │    Discord CLI              │ │
-│  │ (awareness surface)  │    │ (control surface)           │ │
-│  │ • Worker status      │    │ • Dispatch                  │ │
-│  │ • Event feed         │    │ • Approve deploy            │ │
-│  │ • Cost/spend meters  │    │ • Global stop               │ │
-│  │ • System health      │    │ • Configure                 │ │
+│  │ (local command)      │    │ (remote command)            │ │
+│  │ • Provider status    │    │ • Conversational dispatch   │ │
+│  │ • Task queue + vox   │    │ • Remote approvals          │ │
+│  │ • Deploy approvals   │    │ • Global stop               │ │
+│  │ • Event chronicle    │    │ • Configure                 │ │
 │  └─────────┬───────────┘    └──────────┬───────────────────┘ │
 └────────────┼───────────────────────────┼─────────────────────┘
              │                           │
@@ -58,7 +58,7 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 
 ## Design Principles
 
-1. **The GUI is the primary interface** — the Mission Control dashboard shows every agent, every task, every cost. The CLI is for control actions faster by keyboard.
+1. **The GUI is the primary interface** — Mission Control shows every provider, agent, task, and event, and exposes explicit local controls. Discord remains the complementary remote interface.
 2. **Hermes does not write production code** — that's the worker's job, via task docs
 3. **Workers do not trigger deploys, cron changes, or state mutations** — those are Hermes's job, behind Kevin's approval
 4. **No synchronous callbacks across the dispatch channel** — async request files only
@@ -74,7 +74,8 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 | Circuit breaker (spend cap, dispatch depth, global stop) | Planned | Phase 2 |
 | Correlation ID tracing | Planned | Phase 1b |
 | Cost logging (per-task, GUI-displayed spend meters) | Planned | Phase 1c |
-| **Mission Control GUI** (worker status, event feed, cost meters, system health) | **Planned** | **Phase 3** |
+| **Mission Control GUI** (provider registry, task queue, live output, event feed, controls) | **Implemented** | **Phase 3** |
+| Provider registry (Codex, Claude Code, Hermes) | Implemented | Phase 3 |
 | Structured observability (event log feeding the GUI) | Planned | Phase 3 |
 | Agent status snapshot (JSON endpoint for GUI) | Planned | Phase 3 |
 | Discord approval UX (deploy summaries, confirm-before-deploy) | Planned | Phase 4 |

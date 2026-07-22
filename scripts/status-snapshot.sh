@@ -8,56 +8,59 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATUS_FILE="${HERMES_STATUS_FILE:-$HOME/.hermes/status/current.json}"
 MAX_DEPTH="${HERMES_MAX_DEPTH:-3}"
+PROVIDER_FILE="${HERMES_PROVIDER_FILE:-$SCRIPT_DIR/../config/providers.json}"
 
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# Build the workers[] JSON. No jq — manual JSON. Live tmux sessions report
-# active/idle; any roster agent that runs outside tmux reports offline when its
-# session is down so it still shows on the dashboard.
+# Build workers[] from the provider registry. The registry is the source of truth;
+# tmux only supplies live status. Python is used for correct JSON escaping.
 detect_workers() {
-  command -v tmux >/dev/null 2>&1 || return
-  # Known agents that may run without a tmux session. session|display|model|effort|dir|project
-  local -a KNOWN_AGENTS=(
-    "ezekiel|Ezekiel|deepseek-v4-flash|research|~|AdVanced OS"
-    "sammael|Sammael|deepseek-v4-pro|vanguard|~|AdVanced OS"
-  )
-  local name display model effort dir proj status seen=" "
-  local -a rows=()
+  python3 - "$PROVIDER_FILE" "$SCRIPT_DIR/heartbeat-check.sh" <<'PY'
+import json
+import os
+import subprocess
+import sys
 
-  # 1. Live sessions (existing behavior): active/idle.
-  while IFS= read -r name; do
-    [[ "$name" == ezekiel || "$name" == sammael || "$name" == claude-* ]] || continue
-    case "$name" in
-      claude-belial)         display="Belial";        model="claude-opus-4.8"; effort="high";  dir="~/AdVanced-OS"; proj="AdVanced OS" ;;
-      claude-obsoletebot)    display="ObsoleteBot";    model="claude-opus-4.8"; effort="high";  dir="~/ObsoleteBot"; proj="ObsoleteBot" ;;
-      claude-remote-control) display="Remote Control"; model="claude-opus-4.8"; effort="high";  dir="~/ObsoleteBot"; proj="ObsoleteBot" ;;
-      sammael)               display="Sammael";       model="deepseek-v4-pro";   effort="vanguard"; dir="~";           proj="AdVanced OS" ;;
-      ezekiel)               display="Ezekiel";       model="deepseek-v4-flash"; effort="research"; dir="~";           proj="AdVanced OS" ;;
-      *)                     display="$name";          model="unknown";         effort="unknown"; dir="";            proj="" ;;
-    esac
-    # active / idle / stuck from the heartbeat probe (stuck = wedged at prompt).
-    status="$(bash "$SCRIPT_DIR/heartbeat-check.sh" status "$name" 2>/dev/null || echo idle)"
-    rows+=("$display|$name|$status|$model|$effort|$proj|$dir")
-    seen+="$name "
-  done < <(tmux list-sessions -F '#{session_name}' 2>/dev/null)
+registry_path, heartbeat = sys.argv[1:]
+try:
+    with open(registry_path, encoding="utf-8") as handle:
+        registry = json.load(handle)
+except (OSError, ValueError):
+    registry = {"agents": []}
 
-  # 2. Roster agents with no live session: offline.
-  local entry
-  for entry in "${KNOWN_AGENTS[@]}"; do
-    IFS='|' read -r name display model effort dir proj <<<"$entry"
-    [[ "$seen" == *" $name "* ]] && continue
-    rows+=("$display|$name|offline|$model|$effort|$proj|$dir")
-  done
+workers = []
+for agent in registry.get("agents", []):
+    session = agent.get("session") or agent.get("id")
+    alive = False
+    try:
+        alive = subprocess.run(
+            ["tmux", "has-session", "-t", session],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        ).returncode == 0
+    except FileNotFoundError:
+        pass
+    status = "offline"
+    if alive:
+        probe = subprocess.run(
+            ["bash", heartbeat, "status", session], capture_output=True, text=True
+        )
+        status = probe.stdout.strip() if probe.returncode == 0 else "idle"
+    workers.append({
+        "id": agent.get("id"),
+        "provider_id": agent.get("provider_id"),
+        "name": agent.get("name", session),
+        "session": session,
+        "status": status,
+        "model": agent.get("model", "provider default"),
+        "effort": agent.get("role", "general"),
+        "role": agent.get("role", "general"),
+        "project": agent.get("project", ""),
+        "directory": agent.get("directory", ""),
+        "last_phase": "idle",
+    })
 
-  # 3. Emit JSON.
-  local first=1 out="" r
-  for r in "${rows[@]}"; do
-    IFS='|' read -r display name status model effort proj dir <<<"$r"
-    [[ $first -eq 1 ]] && first=0 || out+=$',\n    '
-    out+=$(printf '{"name": "%s", "session": "%s", "status": "%s", "model": "%s", "effort": "%s", "project": "%s", "directory": "%s", "last_phase": "idle"}' \
-      "$display" "$name" "$status" "$model" "$effort" "$proj" "$dir")
-  done
-  echo "$out"
+json.dump(workers, sys.stdout)
+PY
 }
 
 # pull a numeric field out of cost-log.sh's summary JSON (no jq dependency)
@@ -99,9 +102,7 @@ cat > "$STATUS_FILE" <<EOF
     "depth": {"current": 0, "max": $MAX_DEPTH},
     "global_stop": $global_stop
   },
-  "workers": [
-    $workers_json
-  ],
+  "workers": $workers_json,
   "cron_jobs": [
     {"name": "Belial Watchdog", "schedule": "every 5m", "last_run": "$ts", "last_status": "ok"},
     {"name": "ObsoleteBot Watchdog", "schedule": "every 5m", "last_run": "$ts", "last_status": "ok"},

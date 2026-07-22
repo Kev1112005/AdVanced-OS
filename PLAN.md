@@ -18,10 +18,10 @@ AdVanced OS has two complementary interfaces:
 
 | Interface | Role | Technology |
 |-----------|------|------------|
-| **Mission Control GUI** | Awareness — what's running, what happened, what it cost | Static HTML + CSS + JS, polls JSON endpoints |
-| **Discord CLI** | Control — dispatch, approve, stop, configure | Hermes Agent via Discord |
+| **Mission Control GUI** | Awareness + trusted local control — monitor, dispatch, intervene, and approve | Static HTML + CSS + JS, polls JSON endpoints |
+| **Discord CLI** | Complementary remote control — dispatch, approve, stop, configure | Hermes Agent via Discord |
 
-The GUI is the primary interface — the at-a-glance dashboard. The CLI is the control surface for actions faster by keyboard. They share the same backend data (event log, status snapshot, cost log).
+The GUI is the primary interface and local control surface. The CLI remains the remote conversational surface. They share the same provider registry, durable order queue, event log, status snapshot, and safety state.
 
 ## Implementation Phases
 
