@@ -48,9 +48,10 @@
       inset: 0;
       z-index: -2;
       background:
-        linear-gradient(180deg, rgba(2, 5, 3, .66), rgba(2, 4, 3, .94) 55%, #040605),
+        linear-gradient(180deg, rgba(2, 5, 3, .18), rgba(2, 4, 3, .58) 58%, rgba(4, 6, 5, .82)),
         url('/assets/the-rock-command-sanctum.webp') center top / cover no-repeat;
-      opacity: .38;
+      opacity: .78;
+      filter: saturate(1.15) contrast(1.05) brightness(1.1);
     }
     body::after {
       content: "";
@@ -176,7 +177,8 @@
       overflow: hidden;
       border: 1px solid var(--line-strong);
       background:
-        linear-gradient(90deg, rgba(4, 9, 6, .97) 0%, rgba(4, 9, 6, .76) 48%, rgba(4, 8, 6, .43)),
+        linear-gradient(90deg, rgba(4, 9, 6, .88) 0%, rgba(4, 9, 6, .58) 34%, rgba(4, 8, 6, .12) 66%, rgba(4, 8, 6, .05)),
+        linear-gradient(0deg, rgba(4, 9, 6, .52), transparent 72%),
         url('/assets/the-rock-command-sanctum.webp') center 58% / cover no-repeat;
       box-shadow: var(--shadow);
     }
