@@ -21,7 +21,9 @@ Deployment approval is a file-backed interface contract. A pipeline writes one
 request to `~/.hermes/deploy-requests/`, Mission Control or Hermes records Kevin's
 explicit decision in `~/.hermes/approvals/`, and the deployment procedure calls
 `scripts/deploy-approval.sh check` immediately before changing production.
-Decisions are immutable and approval records never execute deployments.
+`server/deployment_approval.py` is the shared contract for deployment IDs,
+locking, record validation, immutable decisions, and gate state. Decisions are
+immutable and approval records never execute deployments.
 
 ### Provider Registry
 

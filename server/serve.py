@@ -16,7 +16,6 @@ Endpoints:
   GET /api/health        -> {"status":"ok","uptime":<seconds>}
 """
 import csv
-import fcntl
 import json
 import mimetypes
 import os
@@ -29,6 +28,17 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
+if SERVER_DIR not in sys.path:
+    sys.path.insert(0, SERVER_DIR)
+
+from deployment_approval import (  # noqa: E402
+    ApprovalStateError,
+    InvalidDeploymentId,
+    MissingRequest,
+    record_decision,
+)
 
 HOME = os.path.expanduser("~")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -415,40 +425,34 @@ def deployment_decision(body):
         data = json.loads(body or b"{}")
     except ValueError:
         return 400, {"error": "invalid JSON body"}
-    deploy_id = _safe_id(data.get("deployment_id"))
+    deploy_id = str(data.get("deployment_id") or "")
     decision = str(data.get("decision", "")).strip()
     if not deploy_id or decision not in ("approve", "deny"):
         return 400, {"error": "deployment_id and approve/deny decision are required"}
-    os.makedirs(DEPLOY_DIR, exist_ok=True)
-    os.makedirs(APPROVAL_DIR, exist_ok=True)
-    request_path = os.path.join(DEPLOY_DIR, f"{deploy_id}.json")
-    approval_path = os.path.join(APPROVAL_DIR, f"{deploy_id}.json")
-    lock_path = os.path.join(DEPLOY_DIR, ".approval.lock")
-    with open(lock_path, "w", encoding="utf-8") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if not read_json(request_path):
-            return 404, {"error": "deployment request not found"}
+    try:
+        result = record_decision(
+            DEPLOY_DIR,
+            APPROVAL_DIR,
+            deploy_id,
+            decision,
+            str(data.get("reason") or ""),
+            os.environ.get("USER", "operator"),
+        )
+    except InvalidDeploymentId as exc:
+        return 400, {"error": str(exc)}
+    except MissingRequest as exc:
+        return 404, {"error": str(exc)}
+    except ApprovalStateError as exc:
+        return 409, {"error": str(exc)}
 
-        existing = read_json(approval_path)
-        if existing:
-            if existing.get("decision") == decision:
-                return 200, {"status": decision, "deployment_id": deploy_id,
-                             "idempotent": True}
-            return 409, {"error": f"deployment already has decision '{existing.get('decision')}'"}
-
-        record = {"deployment_id": deploy_id, "decision": decision,
-                  "reason": str(data.get("reason") or ""),
-                  "decided_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                  "decided_by": os.environ.get("USER", "operator")}
-        temporary = f"{approval_path}.{uuid.uuid4().hex}.tmp"
-        with open(temporary, "w", encoding="utf-8") as f:
-            json.dump(record, f, indent=2)
-            f.write("\n")
-        os.replace(temporary, approval_path)
-
-    append_event(f"{uuid.uuid4()}:0", decision, "mission-control", f"deployment {deploy_id}")
-    return 200, {"status": decision, "deployment_id": deploy_id,
-                 "idempotent": False}
+    if not result["idempotent"]:
+        append_event(
+            f"{uuid.uuid4()}:0",
+            decision,
+            "mission-control",
+            f"deployment {deploy_id}",
+        )
+    return 200, result
 
 
 def list_deployments():

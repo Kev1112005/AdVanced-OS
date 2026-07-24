@@ -181,6 +181,49 @@ class MissionControlTests(unittest.TestCase):
         self.assertEqual(code, 404)
         self.assertIn("not found", response["error"])
 
+    def test_deployment_decision_uses_the_shared_strict_id_contract(self):
+        code, response = mission_control.deployment_decision(json.dumps({
+            "deployment_id": "release:482", "decision": "approve",
+        }).encode())
+        self.assertEqual(code, 400)
+        self.assertIn("deployment id", response["error"])
+
+    def test_deployment_decision_fails_closed_on_invalid_request_state(self):
+        for deployment_id, content in (
+            ("empty-request", "{}"),
+            ("corrupt-request", "{not-json"),
+        ):
+            with self.subTest(deployment_id=deployment_id):
+                request = self.write_deployment_request(deployment_id)
+                request.write_text(content, encoding="utf-8")
+                code, response = mission_control.deployment_decision(json.dumps({
+                    "deployment_id": deployment_id,
+                    "decision": "approve",
+                }).encode())
+                self.assertEqual(code, 409)
+                self.assertIn("deployment request", response["error"])
+                self.assertFalse(
+                    (self.paths["approvals"] / f"{deployment_id}.json").exists()
+                )
+
+    def test_deployment_decision_never_replaces_invalid_approval_state(self):
+        for deployment_id, content in (
+            ("empty-approval", "{}"),
+            ("corrupt-approval", "{not-json"),
+        ):
+            with self.subTest(deployment_id=deployment_id):
+                self.write_deployment_request(deployment_id)
+                self.paths["approvals"].mkdir(parents=True, exist_ok=True)
+                approval = self.paths["approvals"] / f"{deployment_id}.json"
+                approval.write_text(content, encoding="utf-8")
+                code, response = mission_control.deployment_decision(json.dumps({
+                    "deployment_id": deployment_id,
+                    "decision": "approve",
+                }).encode())
+                self.assertEqual(code, 409)
+                self.assertIn("deployment decision", response["error"])
+                self.assertEqual(approval.read_text(encoding="utf-8"), content)
+
     def test_global_stop_blocks_and_then_releases_dispatch(self):
         code, response = mission_control.global_stop_control(json.dumps({
             "action": "engage", "reason": "Test emergency seal",
@@ -221,12 +264,12 @@ class DeployApprovalScriptTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_script(self, *args):
+    def run_script(self, *args, extra_env=None):
         return subprocess.run(
             ["bash", str(self.script), *args],
             capture_output=True,
             text=True,
-            env=self.env,
+            env={**self.env, **(extra_env or {})},
             timeout=5,
         )
 
@@ -280,7 +323,7 @@ class DeployApprovalScriptTests(unittest.TestCase):
             "--decision", "deny",
             "--reason", "conflicting decision",
         )
-        self.assertEqual(conflict.returncode, 2)
+        self.assertEqual(conflict.returncode, 5)
         decision = json.loads((self.approvals / "release-9000.json").read_text())
         self.assertEqual(decision["decision"], "approve")
 
@@ -307,6 +350,98 @@ class DeployApprovalScriptTests(unittest.TestCase):
         record = json.loads(check.stdout)
         self.assertEqual(record["decision"], "deny")
         self.assertEqual(record["reason"], "Rollback plan is incomplete")
+
+    def test_shell_and_mission_control_reject_the_same_unsafe_id(self):
+        created = self.run_script(
+            "request",
+            "--id", "release:482",
+            "--title", "Invalid identifier",
+            "--summary", "Must not create state",
+        )
+        self.assertEqual(created.returncode, 3)
+        self.assertFalse((self.deployments / "release:482.json").exists())
+
+    def test_installed_symlink_resolves_the_shared_helper(self):
+        installed = self.base / "installed" / "deploy-approval.sh"
+        installed.parent.mkdir()
+        installed.symlink_to(self.script)
+        created = subprocess.run(
+            [
+                "bash",
+                str(installed),
+                "request",
+                "--id",
+                "release-symlink",
+                "--title",
+                "Installed command",
+                "--summary",
+                "Resolve the helper from the checkout",
+            ],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            timeout=5,
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        self.assertTrue((self.deployments / "release-symlink.json").exists())
+
+    def test_corrupt_approval_fails_closed_without_overwrite(self):
+        created = self.run_script(
+            "request",
+            "--id", "release-corrupt",
+            "--title", "Corrupt state test",
+            "--summary", "Must remain blocked",
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        self.approvals.mkdir(parents=True, exist_ok=True)
+        approval = self.approvals / "release-corrupt.json"
+        approval.write_text("{}", encoding="utf-8")
+
+        decided = self.run_script(
+            "decide",
+            "--id", "release-corrupt",
+            "--decision", "approve",
+        )
+        self.assertEqual(decided.returncode, 3)
+        self.assertIn("deployment decision", decided.stderr)
+        self.assertEqual(approval.read_text(encoding="utf-8"), "{}")
+
+        checked = self.run_script("check", "--id", "release-corrupt")
+        self.assertEqual(checked.returncode, 3)
+        self.assertEqual(json.loads(checked.stdout)["status"], "invalid")
+
+    def test_request_succeeds_when_discord_notification_fails(self):
+        binary_dir = self.base / "bin"
+        binary_dir.mkdir()
+        hermes = binary_dir / "hermes"
+        hermes.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+        hermes.chmod(0o755)
+
+        created = self.run_script(
+            "request",
+            "--id", "release-notify-retry",
+            "--title", "Notification retry",
+            "--summary", "The durable request is authoritative",
+            extra_env={
+                "HERMES_DEPLOY_NOTIFY": "1",
+                "HERMES_DEPLOY_APPROVAL_TARGET": "discord:test-channel",
+                "PATH": f"{binary_dir}:{os.environ['PATH']}",
+            },
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        self.assertTrue((self.deployments / "release-notify-retry.json").exists())
+        self.assertIn("request pending", created.stdout)
+        self.assertIn("request release-notify-retry is durable", created.stderr)
+
+    def test_documented_smoke_test_uses_isolated_state(self):
+        setup = (
+            ROOT / "docs" / "setup" / "deployment-approval.md"
+        ).read_text(encoding="utf-8")
+        smoke_test = setup.split(
+            "# Exercise request formatting with isolated state", 1
+        )[1]
+        self.assertIn("HERMES_DEPLOY_REQUEST_DIR=", smoke_test)
+        self.assertIn("HERMES_APPROVAL_DIR=", smoke_test)
 
 
 if __name__ == "__main__":

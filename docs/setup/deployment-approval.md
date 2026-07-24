@@ -42,8 +42,9 @@ deploy_id="obsoletebot-482"
   --rollback "Redeploy image sha256:..."
 ```
 
-The request is written to `~/.hermes/deploy-requests/<id>.json`. If Discord
-delivery fails, the request remains pending and can be sent again:
+The request is written to `~/.hermes/deploy-requests/<id>.json`. Once that
+durable write succeeds, the command exits successfully even if Discord delivery
+fails; it prints a warning and the request remains pending. Send it again with:
 
 ```bash
 ~/.hermes/scripts/deploy-approval.sh notify --id "$deploy_id"
@@ -96,11 +97,15 @@ itself run a deploy command.
 ~/.hermes/scripts/deploy-approval.sh list
 ~/.hermes/scripts/deploy-approval.sh status --id "$deploy_id"
 
-# Exercise request formatting without sending Discord traffic:
-HERMES_DEPLOY_NOTIFY=0 \
+# Exercise request formatting with isolated state and no Discord traffic:
+approval_smoke_dir="$(mktemp -d)"
+trap 'rm -rf -- "$approval_smoke_dir"' EXIT
+HERMES_DEPLOY_REQUEST_DIR="$approval_smoke_dir/requests" \
+  HERMES_APPROVAL_DIR="$approval_smoke_dir/approvals" \
+  HERMES_DEPLOY_NOTIFY=0 \
   ~/.hermes/scripts/deploy-approval.sh request \
   --id smoke-test --title "TEST ONLY" --summary "No deployment will run"
 ```
 
-Tests should point `HERMES_DEPLOY_REQUEST_DIR` and `HERMES_APPROVAL_DIR` at a
-temporary directory. Never test against a real production deployment ID.
+Never test against the live request directories or a real production deployment
+ID.

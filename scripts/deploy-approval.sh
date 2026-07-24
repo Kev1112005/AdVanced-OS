@@ -3,7 +3,8 @@
 # Records requests and decisions in the same directories used by Mission Control.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+APPROVAL_HELPER="$SCRIPT_DIR/../server/deployment_approval.py"
 CONFIG="${HERMES_CIRCUIT_BREAKER_CONFIG:-$SCRIPT_DIR/../config/circuit-breaker.yaml}"
 DEPLOY_DIR="${HERMES_DEPLOY_REQUEST_DIR:-$HOME/.hermes/deploy-requests}"
 APPROVAL_DIR="${HERMES_APPROVAL_DIR:-$HOME/.hermes/approvals}"
@@ -30,7 +31,13 @@ Environment:
   HERMES_DEPLOY_APPROVAL_TARGET   Discord target or channel ID
   HERMES_DEPLOY_NOTIFY=0          Print notifications instead of sending
 
-check exit codes: 0=approved, 1=pending, 2=denied, 3=invalid/missing request
+Exit codes:
+  check:  0=approved, 1=pending, 2=denied, 3=invalid/missing/corrupt state
+  decide: 0=recorded/idempotent, 3=invalid state, 5=conflicting decision
+  notify: 0=delivered/printed, 4=delivery/configuration failure
+
+request exits 0 once the durable request exists. Notification failure is
+reported as a warning and can be retried with notify.
 EOF
 }
 
@@ -40,7 +47,7 @@ die() {
 }
 
 safe_id() {
-  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
+  python3 "$APPROVAL_HELPER" validate-id "$1" >/dev/null 2>&1
 }
 
 new_cid() {
@@ -151,49 +158,24 @@ cmd_request() {
   case "$risk" in low|medium|high|critical) ;; *) die "risk must be low, medium, high, or critical" ;; esac
   cid="${cid:-$(new_cid)}"
 
-  mkdir -p "$DEPLOY_DIR" "$APPROVAL_DIR"
-  exec 9>"$DEPLOY_DIR/.approval.lock"
-  flock 9
-  local request approval
-  request="$(request_path "$id")"
-  approval="$(approval_path "$id")"
-  [[ ! -e "$request" ]] || die "deployment request already exists: $id"
-  [[ ! -e "$approval" ]] || die "deployment decision already exists: $id"
-
-  python3 - "$request" "$id" "$title" "$summary" "$repository" "$ref" "$risk" \
-    "$checks" "$rollback" "$cid" "${USER:-operator}" <<'PY'
-from datetime import datetime, timezone
-import json
-import os
-from pathlib import Path
-import sys
-import uuid
-
-path = Path(sys.argv[1])
-record = {
-    "id": sys.argv[2],
-    "title": sys.argv[3],
-    "summary": sys.argv[4],
-    "repository": sys.argv[5],
-    "ref": sys.argv[6],
-    "risk": sys.argv[7],
-    "checks": sys.argv[8],
-    "rollback": sys.argv[9],
-    "correlation_id": sys.argv[10],
-    "requested_by": sys.argv[11],
-    "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    "status": "pending",
-}
-temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-with open(temporary, "w", encoding="utf-8") as handle:
-    json.dump(record, handle, indent=2)
-    handle.write("\n")
-os.replace(temporary, path)
-PY
+  python3 "$APPROVAL_HELPER" request \
+    --deploy-dir "$DEPLOY_DIR" \
+    --approval-dir "$APPROVAL_DIR" \
+    --id "$id" \
+    --title "$title" \
+    --summary "$summary" \
+    --repository "$repository" \
+    --ref "$ref" \
+    --risk "$risk" \
+    --checks "$checks" \
+    --rollback "$rollback" \
+    --correlation-id "$cid" \
+    --requested-by "${USER:-operator}" >/dev/null
 
   log_event "$cid" deploy_request deploy-approval "$id: $title"
-  flock -u 9
-  notify_request "$id"
+  if ! (notify_request "$id"); then
+    echo "warning: deployment request $id is durable but notification failed; retry with notify --id $id" >&2
+  fi
   printf 'deployment request pending: %s\n' "$id"
 }
 
@@ -211,57 +193,15 @@ cmd_decide() {
   safe_id "$id" || die "invalid deployment id"
   case "$decision" in approve|deny) ;; *) die "decision must be approve or deny" ;; esac
 
-  mkdir -p "$DEPLOY_DIR" "$APPROVAL_DIR"
-  exec 9>"$DEPLOY_DIR/.approval.lock"
-  flock 9
-  local request approval result code
-  request="$(request_path "$id")"
-  approval="$(approval_path "$id")"
-  [[ -f "$request" ]] || die "deployment request not found: $id"
-
+  local result code
   set +e
-  result="$(python3 - "$request" "$approval" "$decision" "$reason" "$by" <<'PY'
-from datetime import datetime, timezone
-import json
-import os
-from pathlib import Path
-import sys
-import uuid
-
-request_path = Path(sys.argv[1])
-approval_path = Path(sys.argv[2])
-decision, reason, decided_by = sys.argv[3:]
-with open(request_path, encoding="utf-8") as handle:
-    request = json.load(handle)
-
-if approval_path.exists():
-    with open(approval_path, encoding="utf-8") as handle:
-        existing = json.load(handle)
-    if existing.get("decision") != decision:
-        print(
-            f"error: deployment {request['id']} already has decision "
-            f"{existing.get('decision')}; refusing conflicting {decision}",
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
-    print(json.dumps({"status": decision, "deployment_id": request["id"], "idempotent": True}))
-    raise SystemExit(0)
-
-record = {
-    "deployment_id": request["id"],
-    "decision": decision,
-    "reason": reason,
-    "decided_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    "decided_by": decided_by,
-}
-temporary = approval_path.with_name(f".{approval_path.name}.{uuid.uuid4().hex}.tmp")
-with open(temporary, "w", encoding="utf-8") as handle:
-    json.dump(record, handle, indent=2)
-    handle.write("\n")
-os.replace(temporary, approval_path)
-print(json.dumps({"status": decision, "deployment_id": request["id"], "idempotent": False}))
-PY
-)"
+  result="$(python3 "$APPROVAL_HELPER" decide \
+    --deploy-dir "$DEPLOY_DIR" \
+    --approval-dir "$APPROVAL_DIR" \
+    --id "$id" \
+    --decision "$decision" \
+    --reason "$reason" \
+    --by "$by")"
   code=$?
   set -e
   [[ $code -eq 0 ]] || exit "$code"
@@ -281,23 +221,10 @@ cmd_check() {
     esac
   done
   safe_id "$id" || die "invalid deployment id"
-  python3 - "$(request_path "$id")" "$(approval_path "$id")" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-request_path, approval_path = map(Path, sys.argv[1:])
-if not request_path.exists():
-    print(json.dumps({"status": "invalid", "error": "deployment request not found"}))
-    raise SystemExit(3)
-if not approval_path.exists():
-    print(json.dumps({"status": "pending"}))
-    raise SystemExit(1)
-with open(approval_path, encoding="utf-8") as handle:
-    decision = json.load(handle)
-print(json.dumps(decision))
-raise SystemExit(0 if decision.get("decision") == "approve" else 2)
-PY
+  python3 "$APPROVAL_HELPER" check \
+    --deploy-dir "$DEPLOY_DIR" \
+    --approval-dir "$APPROVAL_DIR" \
+    --id "$id"
 }
 
 cmd_status() {
@@ -309,23 +236,10 @@ cmd_status() {
     esac
   done
   safe_id "$id" || die "invalid deployment id"
-  python3 - "$(request_path "$id")" "$(approval_path "$id")" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-request_path, approval_path = map(Path, sys.argv[1:])
-if not request_path.exists():
-    print(json.dumps({"error": "deployment request not found"}))
-    raise SystemExit(3)
-with open(request_path, encoding="utf-8") as handle:
-    request = json.load(handle)
-decision = None
-if approval_path.exists():
-    with open(approval_path, encoding="utf-8") as handle:
-        decision = json.load(handle)
-print(json.dumps({"request": request, "decision": decision}, indent=2))
-PY
+  python3 "$APPROVAL_HELPER" status \
+    --deploy-dir "$DEPLOY_DIR" \
+    --approval-dir "$APPROVAL_DIR" \
+    --id "$id"
 }
 
 cmd_list() {
