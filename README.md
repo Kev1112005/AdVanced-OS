@@ -78,7 +78,7 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 | Provider registry (Codex, Claude Code, Hermes) | Implemented | Phase 3 |
 | Structured observability (event log feeding the GUI) | Implemented | Phase 3 |
 | Agent status snapshot (JSON endpoint for GUI) | Implemented | Phase 3 |
-| Discord approval UX (deploy summaries, confirm-before-deploy) | Planned | Phase 4 |
+| Discord approval UX (deploy summaries, confirm-before-deploy) | Implemented | Phase 4 |
 | Async shell bridge (hermes-request, hermes-notify) | Implemented | Phase 1a |
 | Production hardening (targeted alerts and backoff) | In progress | Phase 5 |
 | Hermes-run QA gate (success criteria verification) | Planned | Phase 5e |
@@ -130,6 +130,22 @@ git pull
 ./scripts/dashboard-service.sh restart
 ```
 
+## Deployment Approval
+
+Phase 4 records deployment requests and Kevin's explicit approve/deny decisions
+as durable JSON files shared by Discord and Mission Control:
+
+```bash
+./scripts/deploy-approval.sh list
+./scripts/deploy-approval.sh status --id DEPLOYMENT_ID
+./scripts/deploy-approval.sh check --id DEPLOYMENT_ID
+```
+
+Install the Hermes skill and command using
+[the deployment approval setup guide](docs/setup/deployment-approval.md). An
+approval record never runs a deployment by itself; the deployment procedure must
+check the record immediately before making production changes.
+
 ## Directory Structure
 
 ```
@@ -159,11 +175,11 @@ AdVanced OS is built around **Hermes Agent** (by Nous Research). Hermes is the o
 
 ## Status
 
-**Phase:** Phase 3 complete; Phase 4 is next
+**Phase:** Phase 4 complete; Phase 5e is next
 
 The circuit breaker, correlation IDs, async bridge, structured event log, status
-snapshot, durable dispatch queue, and Mission Control GUI are implemented. The next
-core milestone is Discord deployment approval UX, followed by the Hermes-run shell QA
+snapshot, durable dispatch queue, Mission Control GUI, and Discord deployment
+approval gate are implemented. The next core milestone is the Hermes-run shell QA
 gate before any further unattended intake automation.
 
 See [PLAN.md](PLAN.md) for the full roadmap.

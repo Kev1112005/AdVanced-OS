@@ -21,8 +21,13 @@ read -r -a MONITORED <<< "${HERMES_MONITORED_AGENTS:-claude-belial claude-obsole
 # `|| true` so an absent key doesn't fail the pipeline under `set -o pipefail`
 # (grep exits 1 on no match) — that would kill the script before the :-default applies.
 yaml_get() {
-  { grep -E "^[[:space:]]*$1:" "$2" 2>/dev/null || true; } | head -n1 \
-    | sed -E "s/^[[:space:]]*$1:[[:space:]]*//; s/[[:space:]]*#.*$//; s/^\"//; s/\"$//"
+  local key="${1:-}" file="${2:-}"
+  [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+    echo "error: invalid configuration key" >&2
+    return 1
+  }
+  { grep -E "^[[:space:]]*${key}:" "$file" 2>/dev/null || true; } | head -n1 \
+    | sed -E "s/^[[:space:]]*${key}:[[:space:]]*//; s/[[:space:]]*#.*$//; s/^\"//; s/\"$//"
 }
 COOLDOWN="$(yaml_get agent_death_cooldown "$CONFIG")"; COOLDOWN="${COOLDOWN:-300}"
 

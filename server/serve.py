@@ -29,6 +29,17 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
+if SERVER_DIR not in sys.path:
+    sys.path.insert(0, SERVER_DIR)
+
+from deployment_approval import (  # noqa: E402
+    ApprovalStateError,
+    InvalidDeploymentId,
+    MissingRequest,
+    record_decision,
+)
+
 HOME = os.path.expanduser("~")
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PUBLIC = os.path.join(BASE, "public")
@@ -45,6 +56,9 @@ APPROVAL_DIR = os.environ.get("HERMES_APPROVAL_DIR", f"{HOME}/.hermes/approvals"
 DEPLOY_DIR = os.environ.get("HERMES_DEPLOY_REQUEST_DIR", f"{HOME}/.hermes/deploy-requests")
 # CAP = float(os.environ.get("HERMES_WEEKLY_CAP", "20.0"))  # cost tracking disabled
 PORT = int(os.environ.get("MISSION_CONTROL_PORT", "3001"))
+MAX_REQUEST_BODY_BYTES = int(
+    os.environ.get("MISSION_CONTROL_MAX_BODY_BYTES", str(64 * 1024))
+)
 
 START = time.time()
 
@@ -409,24 +423,39 @@ def global_stop_control(body):
 
 
 def deployment_decision(body):
-    """Persist an operator's explicit deployment sanction or denial."""
+    """Persist one immutable, idempotent operator deployment decision."""
     try:
         data = json.loads(body or b"{}")
     except ValueError:
         return 400, {"error": "invalid JSON body"}
-    deploy_id = _safe_id(data.get("deployment_id"))
+    deploy_id = str(data.get("deployment_id") or "")
     decision = str(data.get("decision", "")).strip()
     if not deploy_id or decision not in ("approve", "deny"):
         return 400, {"error": "deployment_id and approve/deny decision are required"}
-    os.makedirs(APPROVAL_DIR, exist_ok=True)
-    record = {"deployment_id": deploy_id, "decision": decision,
-              "reason": str(data.get("reason") or ""),
-              "decided_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "decided_by": os.environ.get("USER", "operator")}
-    with open(os.path.join(APPROVAL_DIR, f"{deploy_id}.json"), "w", encoding="utf-8") as f:
-        json.dump(record, f, indent=2)
-    append_event(f"{uuid.uuid4()}:0", decision, "mission-control", f"deployment {deploy_id}")
-    return 200, {"status": decision, "deployment_id": deploy_id}
+    try:
+        result = record_decision(
+            DEPLOY_DIR,
+            APPROVAL_DIR,
+            deploy_id,
+            decision,
+            str(data.get("reason") or ""),
+            os.environ.get("USER", "operator"),
+        )
+    except InvalidDeploymentId as exc:
+        return 400, {"error": str(exc)}
+    except MissingRequest as exc:
+        return 404, {"error": str(exc)}
+    except ApprovalStateError as exc:
+        return 409, {"error": str(exc)}
+
+    if not result["idempotent"]:
+        append_event(
+            f"{uuid.uuid4()}:0",
+            decision,
+            "mission-control",
+            f"deployment {deploy_id}",
+        )
+    return 200, result
 
 
 def list_deployments():
@@ -632,7 +661,25 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        n = int(self.headers.get("Content-Length", 0) or 0)
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            self._send(400, {"error": "invalid Content-Length"})
+            return
+        if n < 0:
+            self._send(400, {"error": "invalid Content-Length"})
+            return
+        if n > MAX_REQUEST_BODY_BYTES:
+            self._send(
+                413,
+                {
+                    "error": (
+                        f"request body exceeds the "
+                        f"{MAX_REQUEST_BODY_BYTES}-byte limit"
+                    )
+                },
+            )
+            return
         body = self.rfile.read(n) if n else b""
         if path == "/api/dispatch":
             self._send(*create_dispatch(body))

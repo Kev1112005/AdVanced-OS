@@ -15,7 +15,21 @@ Two complementary interfaces sit above the orchestrator. They share the same bac
 | **Mission Control GUI** | Awareness + trusted local control — monitor agents and issue explicit operator actions | Static HTML + CSS + JS, polls JSON endpoints | Sitting at a desk, want to see and control everything at once |
 | **Discord CLI** | Complementary remote control — dispatch, approve deploys, stop, configure | Hermes Agent via Discord | On mobile, in a meeting, or when an action is faster by conversation |
 
-The GUI is the primary interface and local control surface. It can issue structured orders, follow up with live agents, hold or interrupt work, restart configured sessions, record deployment decisions, and engage the disk-backed global stop. The CLI remains the remote control surface. Both share the same provider registry, durable order queue, event log, status snapshot, and safety state.
+The GUI is the primary interface and local control surface. It can issue structured orders, follow up with live agents, hold or interrupt work, restart configured sessions, record deployment decisions, and engage the disk-backed global stop. The CLI remains the remote control surface. Both share the same provider registry, durable order queue, event log, status snapshot, deployment request and decision directories, and safety state.
+
+Deployment approval is a file-backed interface contract. A pipeline writes one
+request to `~/.hermes/deploy-requests/`, Mission Control or Hermes records Kevin's
+explicit decision in `~/.hermes/approvals/`, and the deployment procedure calls
+`scripts/deploy-approval.sh check` immediately before changing production.
+`server/deployment_approval.py` is the shared contract for deployment IDs,
+locking, record validation, immutable decisions, and gate state. Decisions are
+immutable and approval records never execute deployments.
+
+The lock file is anchored in the deployment request directory. All cooperating
+interfaces must share both configured state paths and therefore that same lock
+inode. The approval directory can live on another filesystem: serialization
+comes from the shared lock, while each atomic replacement uses a temporary file
+created beside its destination.
 
 ### Provider Registry
 
@@ -104,11 +118,13 @@ Hermes
   │  5a. Runs QA gate (checks success criteria)
   │  5b. Verifies git state (commit landed? branch correct?)
   │  6. Reports to Kevin
-  │  7. Kevin approves → Hermes pushes branch, opens PR
+  │  7. Kevin approves publication → Hermes pushes branch, opens PR
   │  8. CI runs
   │  9. CI green → Hermes merges PR
-  │  10. Pulls main, rebuilds Docker, deploys
-  │  11. Posts deploy notification to Discord
+  │  10. Writes durable deploy request and notifies Kevin
+  │  11. Kevin explicitly approves the deployment ID
+  │  12. Verifies approval record, pulls main, rebuilds, and deploys
+  │  13. Posts deploy notification to Discord
   ▼
 Kevin (Discord)
       Receives deployment confirmation
@@ -158,7 +174,7 @@ Kevin request
   └──┬──┘
      │ PASS
   ┌──▼──┐
-  │ DEP │  ← Kevin approval required for deploy
+  │ DEP │  ← Durable approval for exact deployment ID required
   │ LOY │
   └─────┘
 ```

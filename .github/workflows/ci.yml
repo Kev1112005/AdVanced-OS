@@ -33,7 +33,7 @@ jobs:
         run: python3 -m unittest discover -s tests -v
 
       - name: Compile Python
-        run: python3 -m py_compile server/serve.py tests/test_serve.py
+        run: python3 -m py_compile server/deployment_approval.py server/serve.py tests/test_serve.py
 
       - name: Validate provider registry
         run: python3 -m json.tool config/providers.json >/dev/null
