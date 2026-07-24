@@ -140,9 +140,12 @@
     .breadcrumb { min-width: 0; }
     .eyebrow { color: var(--brass); font: 9px/1.2 var(--mono); letter-spacing: .18em; text-transform: uppercase; }
     .breadcrumb h1 { margin: 5px 0 0; font: 600 17px/1 var(--serif); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .top-actions { margin-left: auto; display: flex; align-items: center; gap: 9px; }
-    .demo-ribbon { display: none; color: var(--warning); border: 1px solid rgba(211,154,73,.35); background: rgba(80, 48, 16, .28); padding: 7px 10px; font: 9px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .top-actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 9px; }
+    .demo-ribbon { display: none; max-width: 390px; color: var(--warning); border: 1px solid rgba(211,154,73,.35); background: rgba(80, 48, 16, .28); padding: 7px 10px; font: 9px/1.35 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
     .demo-ribbon.show { display: block; }
+    .demo-ribbon.bad { color: #edb6aa; border-color: rgba(165,50,44,.5); background: rgba(92,24,21,.3); }
+    .control-feedback { display: none; max-width: 390px; padding: 7px 10px; color: #edb6aa; border: 1px solid rgba(165,50,44,.5); background: rgba(92,24,21,.3); font: 9px/1.35 var(--mono); }
+    .control-feedback.show { display: block; }
     .btn {
       border: 1px solid var(--line-strong);
       border-radius: 2px;
@@ -243,6 +246,9 @@
     .status-pill { padding: 4px 7px; font: 8px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; border: 1px solid var(--line); color: var(--ash); }
     .status-pill.running, .status-pill.active { color: var(--sanctified); border-color: rgba(121,167,131,.35); }
     .status-pill.queued { color: var(--warning); border-color: rgba(211,154,73,.3); }
+    .status-pill.dispatched { color: #9fb7d8; border-color: rgba(126,157,198,.35); }
+    .status-pill.qa_pass { color: var(--sanctified); border-color: rgba(121,167,131,.35); }
+    .status-pill.qa_fail, .status-pill.queue_failed, .status-pill.cancelled { color: var(--blood-bright); border-color: rgba(165,50,44,.4); }
     .icon-btn { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); background: transparent; color: var(--ash); cursor: pointer; }
     .icon-btn:hover:not(:disabled) { color: var(--blood-bright); border-color: var(--blood); }
     .icon-btn:disabled { opacity: .35; cursor: not-allowed; }
@@ -314,6 +320,42 @@
     .risk { margin-left: auto; padding: 4px 7px; color: var(--warning); border: 1px solid rgba(211,154,73,.3); font: 8px var(--mono); text-transform: uppercase; }
     .approval-actions { display: flex; gap: 7px; margin-top: 11px; }
 
+    .phase-five { margin-top: 18px; }
+    .phase-grid { display: grid; grid-template-columns: 1.1fr 1.1fr .8fr; min-height: 330px; }
+    .phase-column { min-width: 0; padding: 15px; border-right: 1px solid var(--line); }
+    .phase-column:last-child { border-right: 0; }
+    .phase-head { display: flex; align-items: center; gap: 8px; margin-bottom: 11px; }
+    .phase-head h3 { margin: 0; color: var(--bone); font: 600 11px var(--serif); letter-spacing: .08em; text-transform: uppercase; }
+    .phase-head small { margin-left: auto; color: #697068; font: 8px var(--mono); }
+    .phase-list { display: grid; gap: 8px; max-height: 310px; overflow: auto; }
+    .phase-item { padding: 11px; border: 1px solid rgba(190,166,112,.13); background: rgba(4,9,6,.5); }
+    .phase-item-top { display: flex; align-items: flex-start; gap: 8px; }
+    .phase-item h4 { min-width: 0; margin: 0; color: var(--bone-soft); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .phase-item .status-pill { margin-left: auto; flex: none; }
+    .phase-item .status-pill.qa_pass, .phase-item .status-pill.done, .phase-item .status-pill.pending_review { color: var(--sanctified); border-color: rgba(121,167,131,.35); }
+    .phase-item .status-pill.qa_fail, .phase-item .status-pill.blocked { color: var(--blood-bright); border-color: rgba(165,50,44,.4); }
+    .phase-item p { margin: 7px 0 0; color: #747b72; font-size: 9px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .phase-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; color: #626a61; font: 8px var(--mono); }
+    .phase-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .learning-form { display: grid; gap: 7px; margin-bottom: 10px; }
+    .learning-form textarea, .learning-form input { width: 100%; color: var(--bone); background: #070c09; border: 1px solid var(--line); padding: 8px; resize: vertical; }
+    .learning-form textarea { min-height: 62px; }
+    .learning-entry { padding: 8px 9px; color: #838b81; border-left: 2px solid var(--forest-bright); background: rgba(4,9,6,.5); font-size: 9px; }
+    .phase-detail { margin-top: 9px; border-top: 1px solid rgba(190,166,112,.12); padding-top: 8px; }
+    .phase-detail summary { color: var(--brass-bright); cursor: pointer; font: 8px var(--mono); letter-spacing: .07em; text-transform: uppercase; }
+    .evidence {
+      max-height: 330px;
+      overflow: auto;
+      margin: 9px 0 0;
+      padding: 10px;
+      color: #aeb8ae;
+      border: 1px solid rgba(190,166,112,.13);
+      background: #050906;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: 9px/1.55 var(--mono);
+    }
+
     .empty { min-height: 150px; display: grid; place-items: center; text-align: center; color: #697068; padding: 24px; }
     .empty .rune { display: block; margin-bottom: 9px; color: var(--brass); font: 27px var(--serif); }
     .empty strong { display: block; color: var(--bone-soft); font: 600 12px var(--serif); text-transform: uppercase; letter-spacing: .07em; }
@@ -340,9 +382,30 @@
     .field label { display: block; margin-bottom: 6px; color: var(--brass); font: 8.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
     .field textarea { min-height: 104px; resize: vertical; }
     .field textarea.criteria { min-height: 82px; }
+    .field-help { display: block; margin-top: 6px; color: #747b72; font-size: 9px; }
+    .policy-note { padding: 11px 12px; color: var(--bone-soft); border: 1px solid rgba(121,167,131,.2); background: rgba(28,56,37,.28); font-size: 10px; }
+    .policy-note strong { color: var(--sanctified); }
+    .order-feedback { display: none; margin-bottom: 14px; padding: 10px 12px; color: #edb6aa; border: 1px solid rgba(165,50,44,.5); background: rgba(92,24,21,.2); font: 10px/1.5 var(--mono); }
+    .order-feedback.show { display: block; }
     .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px 21px; }
     .confirm-copy { color: var(--bone-soft); font-size: 12px; }
     .confirm-copy strong { color: var(--bone); }
+    .review-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 14px; }
+    .review-meta div { padding: 8px 10px; border: 1px solid rgba(190,166,112,.12); background: rgba(4,9,6,.5); }
+    .review-meta dt { color: var(--ash); font: 8px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .review-meta dd { margin: 4px 0 0; color: var(--bone-soft); overflow-wrap: anywhere; font-size: 10px; }
+    .review-result { max-height: min(48vh, 520px); min-height: 180px; }
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
 
     #toast {
       position: fixed;
@@ -371,6 +434,8 @@
       .sanctum { grid-template-columns: 1fr; }
       .priority-grid { grid-template-columns: 1fr; }
       .stats { max-width: 760px; }
+      .phase-grid { grid-template-columns: 1fr 1fr; }
+      .phase-column:last-child { grid-column: 1 / -1; border-top: 1px solid var(--line); }
     }
     @media (max-width: 900px) {
       .shell { display: block; }
@@ -384,10 +449,14 @@
       .topbar { top: 0; padding: 0 18px; }
       .content { padding: 18px; }
       .lower-grid { grid-template-columns: 1fr; }
+      .phase-grid { grid-template-columns: 1fr; }
+      .phase-column { border-right: 0; border-bottom: 1px solid var(--line); }
+      .phase-column:last-child { grid-column: auto; border-bottom: 0; }
     }
     @media (max-width: 680px) {
       .topbar { min-height: 64px; }
-      .breadcrumb .eyebrow, .demo-ribbon.show, #sealText { display: none; }
+      .breadcrumb .eyebrow, #sealText { display: none; }
+      .demo-ribbon.show, .control-feedback.show { display: block; max-width: 155px; }
       .content { padding: 12px; }
       .sanctum { min-height: 330px; padding: 22px; }
       .stats { grid-template-columns: 1fr 1fr; }
@@ -417,6 +486,7 @@
         <a href="#orders"><span class="glyph">‡</span><span class="nav-copy"><strong>Orders</strong><small>Task deployment</small></span></a>
         <a href="#vox"><span class="glyph">◉</span><span class="nav-copy"><strong>Vox Obscura</strong><small>Live agent output</small></span></a>
         <a href="#chronicle"><span class="glyph">✥</span><span class="nav-copy"><strong>Librarius</strong><small>Event chronicle</small></span></a>
+        <a href="#phase-five"><span class="glyph">⚙</span><span class="nav-copy"><strong>Phase V</strong><small>QA · tickets · learning</small></span></a>
         <a href="#inner-circle"><span class="glyph">♜</span><span class="nav-copy"><strong>Inner Circle</strong><small>Provider registry</small></span></a>
       </nav>
       <div class="sidebar-foot">
@@ -432,9 +502,10 @@
           <h1>Strategium Command Throne</h1>
         </div>
         <div class="top-actions">
-          <div id="demoRibbon" class="demo-ribbon">Simulated augury</div>
+          <div id="dataRibbon" class="demo-ribbon show" role="status" aria-live="polite">Loading live state…</div>
+          <div id="controlFeedback" class="control-feedback" role="alert" tabindex="-1"></div>
           <button id="issueTop" class="btn primary" type="button" onclick="openOrderModal()">Issue Order</button>
-          <button id="sealBtn" class="btn danger" type="button" onclick="toggleGlobalStop()"><span aria-hidden="true">⛨</span> <span id="sealText">Seal the Rock</span></button>
+          <button id="sealBtn" class="btn danger" type="button" aria-label="Seal the Rock" onclick="toggleGlobalStop()"><span aria-hidden="true">⛨</span> <span id="sealText">Seal the Rock</span></button>
         </div>
       </header>
 
@@ -446,10 +517,10 @@
             <p>Issue structured orders to Codex, Claude Code, and Hermes brethren through one circuit-breaker-protected gate. Every command is witnessed in the Librarius.</p>
           </div>
           <div class="stats" aria-label="System summary">
-            <div class="stat"><div class="label">Brethren Active</div><strong id="statActive">—</strong><small id="statActiveMeta">of — registered</small></div>
+            <div class="stat"><div class="label">Brethren Online</div><strong id="statActive">—</strong><small id="statActiveMeta">of — registered</small></div>
             <div class="stat"><div class="label">Orders in Queue</div><strong id="statQueue">—</strong><small>serial gate · limit 1</small></div>
-            <div class="stat"><div class="label">Rites Fulfilled</div><strong id="statComplete">—</strong><small>recorded in chronicle</small></div>
-            <div class="stat"><div class="label">System Sanctity</div><strong id="statHealth">—</strong><small id="statHealthMeta">awaiting circuit state</small></div>
+            <div class="stat"><div class="label">Recent Successes</div><strong id="statComplete">—</strong><small>visible chronicle window</small></div>
+            <div class="stat"><div class="label">Control State</div><strong id="statHealth">—</strong><small id="statHealthMeta">awaiting circuit state</small></div>
           </div>
         </section>
 
@@ -457,7 +528,7 @@
           <section class="panel" id="orders">
             <div class="panel-header">
               <span class="panel-sigil" aria-hidden="true">‡</span>
-              <div class="panel-title"><h2>Orders of the Watch</h2><p>Task queue · highest precedence first</p></div>
+              <div class="panel-title"><h2>Orders of the Watch</h2><p>Queued orders · recent delivery history</p></div>
               <div class="panel-actions"><span id="orderCount" class="count">0</span><button class="btn small primary" type="button" onclick="openOrderModal()">New Order</button></div>
             </div>
             <div class="panel-body"><div id="orderList" class="orders" aria-live="polite"></div></div>
@@ -497,6 +568,35 @@
           <div id="eventList" class="event-list" aria-live="polite"></div>
         </section>
 
+        <section class="panel phase-five" id="phase-five" tabindex="-1">
+          <div class="panel-header">
+            <span class="panel-sigil" aria-hidden="true">⚙</span>
+            <div class="panel-title"><h2>Phase V Operations</h2><p>Concrete QA · report-only intake · human-curated learning</p></div>
+            <div class="panel-actions"><span id="phaseFiveState" class="status-pill">loading</span></div>
+          </div>
+          <div class="phase-grid">
+            <div class="phase-column">
+              <div class="phase-head"><h3>QA Wards</h3><small id="qaRunCount">0 runs</small></div>
+              <div id="qaRunList" class="phase-list"></div>
+            </div>
+            <div class="phase-column">
+              <div class="phase-head"><h3>Async Tickets</h3><small id="ticketCount">0 tickets</small></div>
+              <div id="ticketList" class="phase-list"></div>
+            </div>
+            <div class="phase-column">
+              <div class="phase-head"><h3>Compound Learnings</h3><small id="learningCount">0 entries</small></div>
+              <div class="learning-form">
+                <label class="sr-only" for="learningText">Durable learning</label>
+                <textarea id="learningText" maxlength="1000" placeholder="Capture a durable pattern or gotcha…"></textarea>
+                <label class="sr-only" for="learningTags">Learning tags, comma-separated</label>
+                <input id="learningTags" maxlength="120" placeholder="tags, comma-separated">
+                <button id="addLearningBtn" class="btn small primary" type="button" onclick="addLearning()">Record Learning</button>
+              </div>
+              <div id="learningList" class="phase-list"></div>
+            </div>
+          </div>
+        </section>
+
         <div class="lower-grid">
           <section class="panel" id="inner-circle">
             <div class="panel-header"><span class="panel-sigil" aria-hidden="true">♜</span><div class="panel-title"><h2>Inner Circle Registry</h2><p>Provider adapters · local tmux transport</p></div></div>
@@ -511,30 +611,53 @@
     </main>
   </div>
 
-  <dialog id="orderModal">
+  <dialog id="orderModal" aria-labelledby="orderModalTitle" aria-describedby="orderModalDesc">
     <form id="orderForm" method="dialog" onsubmit="submitOrder(event)">
-      <div class="modal-head"><span class="panel-sigil">‡</span><div><h2>Issue an Order</h2><p>Structured deployment through the Rock serial gate</p></div></div>
+      <div class="modal-head"><span class="panel-sigil" aria-hidden="true">‡</span><div><h2 id="orderModalTitle">Issue an Order</h2><p id="orderModalDesc">Structured delivery through the Rock serial gate</p></div></div>
       <div class="modal-body">
+        <div id="orderFeedback" class="order-feedback" role="alert"></div>
         <div class="form-grid">
           <div class="field"><label for="orderAgent">Agent of the Inner Circle</label><select id="orderAgent" required></select></div>
           <div class="field"><label for="orderTitle">Order title</label><input id="orderTitle" required maxlength="120" placeholder="Reinforce the dispatch ward"></div>
           <div class="field"><label for="orderRepository">Repository</label><input id="orderRepository" placeholder="owner/repository or local path"></div>
           <div class="field"><label for="orderBranch">Requested branch</label><input id="orderBranch" placeholder="agent/order-name"></div>
           <div class="field"><label for="orderPriority">Precedence</label><select id="orderPriority"><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option><option value="low">Low</option></select></div>
-          <div class="field"><label for="orderModel">Model override</label><input id="orderModel" placeholder="Provider default"></div>
           <div class="field wide"><label for="orderPrompt">Command intent</label><textarea id="orderPrompt" required placeholder="Describe the work, relevant context, constraints, and expected delivery…"></textarea></div>
-          <div class="field wide"><label for="orderCriteria">Acceptance criteria · one per line</label><textarea id="orderCriteria" class="criteria" placeholder="Tests pass&#10;No unrelated files change&#10;Open a draft pull request"></textarea></div>
-          <div class="field wide"><label for="orderApproval">Deployment sanction</label><select id="orderApproval"><option value="confirm_deploy">Require explicit approval before deployment</option><option value="confirm_merge">Require approval before merge and deployment</option><option value="no_deploy">Task may not deploy</option></select></div>
+          <div class="field wide"><label for="orderCriteria">Acceptance criteria · worker context, one per line</label><textarea id="orderCriteria" class="criteria" aria-describedby="orderCriteriaHelp" placeholder="Tests pass&#10;No unrelated files change&#10;Open a draft pull request"></textarea><small id="orderCriteriaHelp" class="field-help">These guide the worker. Only the typed QA fields below are enforced automatically.</small></div>
+          <div class="field"><label for="orderQaMode">Typed QA contract · enforced</label><select id="orderQaMode"><option value="commit">Committed delivery · commit advanced + clean tree</option><option value="report">Report-only · result file captured</option></select></div>
+          <div class="field"><label for="orderQaCommand">Test command · optional</label><input id="orderQaCommand" maxlength="1000" placeholder="python3 -m unittest discover -s tests -v"></div>
+          <div class="field wide"><label for="orderRequiredFiles">Required files · one repository-relative path per line</label><textarea id="orderRequiredFiles" class="criteria" placeholder="scripts/new-hook.sh&#10;docs/setup/phase5.md"></textarea></div>
+          <div class="field wide"><div class="policy-note" role="note"><strong>Fixed safety policy:</strong> this order cannot deploy autonomously. Every deployment still requires Kevin’s explicit approval through the separate deployment rite.</div></div>
         </div>
       </div>
-      <div class="modal-actions"><button class="btn ghost" type="button" onclick="closeOrderModal()">Withdraw</button><button id="submitOrder" class="btn primary" type="submit">Seal & Queue Order</button></div>
+      <div class="modal-actions"><button class="btn ghost" type="button" onclick="closeOrderModal()">Withdraw</button><button id="submitOrderBtn" class="btn primary" type="submit">Seal & Queue Order</button></div>
     </form>
   </dialog>
 
-  <dialog id="confirmModal">
-    <div class="modal-head"><span class="panel-sigil">⛨</span><div><h2 id="confirmTitle">Confirm rite</h2><p>Operator sanction required</p></div></div>
+  <dialog id="confirmModal" aria-labelledby="confirmTitle" aria-describedby="confirmCopy">
+    <div class="modal-head"><span class="panel-sigil" aria-hidden="true">⛨</span><div><h2 id="confirmTitle">Confirm rite</h2><p>Operator sanction required</p></div></div>
     <div class="modal-body"><p id="confirmCopy" class="confirm-copy"></p></div>
     <div class="modal-actions"><button class="btn ghost" type="button" onclick="closeConfirm(false)">Abstain</button><button id="confirmAccept" class="btn danger" type="button" onclick="closeConfirm(true)">Sanction</button></div>
+  </dialog>
+
+  <dialog id="ticketReviewModal" aria-labelledby="ticketReviewTitle" aria-describedby="ticketReviewIntro">
+    <div class="modal-head"><span class="panel-sigil" aria-hidden="true">‡</span><div><h2 id="ticketReviewTitle">Review Ticket Result</h2><p id="ticketReviewIntro">Inspect the complete captured report before recording a human decision.</p></div></div>
+    <div class="modal-body">
+      <dl class="review-meta">
+        <div><dt>Ticket</dt><dd id="ticketReviewId">—</dd></div>
+        <div><dt>Status</dt><dd id="ticketReviewStatus">—</dd></div>
+        <div><dt>Owner</dt><dd id="ticketReviewOwner">—</dd></div>
+        <div><dt>Priority / mode</dt><dd id="ticketReviewRoute">—</dd></div>
+        <div style="grid-column:1/-1"><dt>Goal</dt><dd id="ticketReviewGoal">—</dd></div>
+      </dl>
+      <h3 class="eyebrow">Complete bounded result</h3>
+      <pre id="ticketReviewResult" class="evidence review-result" tabindex="0"></pre>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" onclick="closeTicketReview()">Close</button>
+      <button id="ticketReviewBlock" class="btn danger" type="button" onclick="submitTicketReview('blocked')">Block</button>
+      <button id="ticketReviewAccept" class="btn primary" type="button" onclick="submitTicketReview('done')">Accept Result</button>
+    </div>
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
@@ -577,7 +700,19 @@
       }
     };
 
-    const state = {registry:{providers:[],agents:[]}, status:null, orders:[], events:[], deployments:[], selectedAgent:'', demo:false, confirm:null};
+    const EXPLICIT_DEMO = new URLSearchParams(window.location.search).get('demo') === '1';
+    const SNAPSHOT_STALE_MS = 5 * 60 * 1000;
+    const ACTION_ID = /^[A-Za-z0-9._:-]+$/;
+    const state = {
+      registry:{providers:[],agents:[]}, status:null, orders:[], events:[], deployments:[],
+      taskRuns:[], tickets:[], learnings:{entries:[],count:0}, phase5:null,
+      selectedAgent:'', demo:EXPLICIT_DEMO, confirm:null, confirmFocus:null,
+      reviewTicket:null, reviewFocus:null, controlError:'',
+      refreshGeneration:0, refreshController:null,
+      liveGeneration:0, liveController:null, livePendingFor:'', liveCache:{},
+      globalStopOverride:null,
+      slices:{}
+    };
     let toastTimer;
 
     function toast(message, error=false) {
@@ -588,9 +723,12 @@
       toastTimer = setTimeout(() => element.className = '', 3400);
     }
 
-    async function getJSON(url) {
-      try { const response = await fetch(url); return response.ok ? await response.json() : null; }
-      catch (_) { return null; }
+    async function getJSON(url, options={}) {
+      const response = await fetch(url, options);
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || `${url} returned HTTP ${response.status}`);
+      if (body === null) throw new Error(`${url} returned invalid JSON`);
+      return body;
     }
     async function postJSON(url, data) {
       const response = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
@@ -599,35 +737,106 @@
     function provider(id) { return state.registry.providers.find(item => item.id === id) || {id, name:id || 'Unknown', type:id}; }
     function agent(id) { return state.registry.agents.find(item => id === item.id || id === item.session) || null; }
     function currentAgent() { return agent(state.selectedAgent); }
+    function validActionId(value) { return ACTION_ID.test(String(value || '')); }
+    function restoreFocus(element, fallback='#issueTop') {
+      if (element?.isConnected) element.focus();
+      else $(fallback)?.focus();
+    }
+    function snapshotStale() {
+      const timestamp = Date.parse(state.status?.generated_at || '');
+      return !Number.isFinite(timestamp) || Date.now() - timestamp > SNAPSHOT_STALE_MS;
+    }
+    function globalStopState() {
+      if (state.globalStopOverride) return {known:true, value:state.globalStopOverride.value};
+      const freshStatus = state.slices.status?.ok && !snapshotStale();
+      const value = state.status?.circuit_breaker?.global_stop;
+      return {known:Boolean(freshStatus && typeof value === 'boolean'), value:value === true};
+    }
+    function setControlFeedback(message, focus=false) {
+      state.controlError = message || '';
+      const feedback = $('#controlFeedback');
+      feedback.textContent = state.controlError;
+      feedback.classList.toggle('show', Boolean(state.controlError));
+      if (state.controlError && focus) feedback.focus();
+    }
+    function renderDataHealth() {
+      const ribbon = $('#dataRibbon');
+      const failures = Object.entries(state.slices)
+        .filter(([,value]) => value.attempted && !value.ok)
+        .map(([name]) => name);
+      const stale = state.status && snapshotStale();
+      if (state.demo) {
+        ribbon.textContent = 'DEMO MODE · all simulated records are non-operational';
+        ribbon.className = 'demo-ribbon show';
+      } else if (failures.length || stale) {
+        const parts = [];
+        if (failures.length) parts.push(`stale data: ${failures.join(', ')}`);
+        if (stale) parts.push('status snapshot expired');
+        ribbon.textContent = `DEGRADED · ${parts.join(' · ')}`;
+        ribbon.className = 'demo-ribbon show bad';
+      } else if (!state.slices.status?.attempted) {
+        ribbon.textContent = 'Loading live state…';
+        ribbon.className = 'demo-ribbon show';
+      } else {
+        ribbon.textContent = '';
+        ribbon.className = 'demo-ribbon';
+      }
+      setControlFeedback(state.controlError);
+    }
 
     function renderSystem() {
       const agents = state.registry.agents || [];
-      const active = agents.filter(a => ['active','idle','stuck','paused'].includes(a.status)).length;
+      const online = agents.filter(a => ['active','idle','stuck','paused'].includes(a.status)).length;
+      const active = agents.filter(a => a.status === 'active').length;
       const events = state.events.length ? state.events : (state.demo ? DEMO.events : []);
       const complete = events.filter(e => ['complete','qa_pass','approve','deploy'].includes(e.event)).length;
       const cb = state.status?.circuit_breaker || {};
-      const stopped = cb.global_stop || cb.status === 'TRIPPED';
-      $('#statActive').textContent = active;
-      $('#statActiveMeta').textContent = `of ${agents.length} registered`;
+      const stop = globalStopState();
+      const tripped = cb.status === 'TRIPPED';
+      const degraded = !state.slices.status?.ok || snapshotStale() || Object.values(state.slices).some(slice => slice.attempted && !slice.ok);
+      const health = stop.value ? 'SEALED' : tripped ? 'TRIPPED' : degraded ? 'DEGRADED' : state.status ? 'READY' : 'UNKNOWN';
+      $('#statActive').textContent = online;
+      $('#statActiveMeta').textContent = `${active} active · ${agents.length} registered`;
       $('#statQueue').textContent = state.orders.length || (state.demo ? DEMO.orders.length : 0);
       $('#statComplete').textContent = complete;
-      $('#statHealth').textContent = stopped ? 'SEALED' : state.status?.error ? 'DEGRADED' : 'PURE';
-      $('#statHealthMeta').textContent = stopped ? 'global stop engaged' : 'circuit wards holding';
-      $('#sideSignal').className = `signal ${stopped ? 'bad' : state.status ? 'good' : 'warn'}`;
-      $('#sideStatus').textContent = stopped ? 'The Rock is sealed' : state.status ? 'Wards operational' : 'Simulated augury';
-      $('#sealBtn').classList.toggle('engaged', stopped);
-      $('#sealText').textContent = stopped ? 'Unseal the Rock' : 'Seal the Rock';
-      $('#lastStamp').textContent = state.status?.generated_at ? `Snapshot ${hhmmss(state.status.generated_at)}` : 'No live sanctified snapshot';
-      $('#demoRibbon').classList.toggle('show', state.demo);
+      $('#statHealth').textContent = health;
+      $('#statHealthMeta').textContent = stop.value ? 'disk-backed global stop engaged' : tripped ? 'circuit breaker tripped' : degraded ? 'one or more data sources are stale' : state.status ? 'latest snapshot available' : 'no trusted status available';
+      $('#sideSignal').className = `signal ${stop.value || tripped ? 'bad' : degraded || !state.status ? 'warn' : 'good'}`;
+      $('#sideStatus').textContent = stop.value ? 'The Rock is sealed' : tripped ? 'Circuit breaker tripped' : degraded ? 'Live state degraded' : state.status ? 'Snapshot current' : 'State unknown';
+      $('#sealBtn').classList.toggle('engaged', stop.value);
+      $('#sealBtn').title = !stop.known ? 'Stop state is not current; this action can only engage the emergency seal.' : '';
+      $('#sealText').textContent = stop.known && stop.value ? 'Unseal the Rock' : 'Seal the Rock';
+      $('#sealBtn').setAttribute('aria-label', stop.known && stop.value ? 'Unseal the Rock' : 'Seal the Rock');
+      $('#lastStamp').textContent = state.status?.generated_at ? `Snapshot ${hhmmss(state.status.generated_at)}${snapshotStale() ? ' · stale' : ''}` : 'No trusted status snapshot';
+      renderDataHealth();
     }
 
     function renderOrders() {
-      const list = state.orders.length ? state.orders : (state.demo ? DEMO.orders : []);
+      const history = (state.taskRuns || []).filter(run => !run.ticket_id).map(run => ({
+        ...run, agent_id:run.agent, task:run.summary, can_cancel:false
+      }));
+      const merged = new Map(history.map(order => [order.request_id, order]));
+      state.orders.forEach(order => merged.set(order.request_id, {
+        ...(merged.get(order.request_id) || {}), ...order, status:'queued', can_cancel:true
+      }));
+      const priorityRank = {critical:0, high:1, normal:2, low:3};
+      const list = [...merged.values()].sort((a, b) => {
+        const queueRank = Number((a.status || 'queued') !== 'queued') - Number((b.status || 'queued') !== 'queued');
+        if (queueRank) return queueRank;
+        if ((a.status || 'queued') === 'queued') {
+          const precedence = (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2);
+          if (precedence) return precedence;
+        }
+        return String(b.qa_completed_at || b.dispatched_at || b.cancelled_at || b.failed_at || b.created_at || '')
+          .localeCompare(String(a.qa_completed_at || a.dispatched_at || a.cancelled_at || a.failed_at || a.created_at || ''));
+      });
+      if (!list.length && state.demo) list.push(...DEMO.orders);
       $('#orderCount').textContent = list.length;
       $('#orderList').innerHTML = list.length ? list.map(order => {
         const p = provider(order.provider_id);
         const status = order.status || 'queued';
-        const copy = String(order.task || '').replace(/^# .*?\n+/, '').slice(0, 160);
+        const copy = String(order.summary || order.task || '').replace(/^# .*?\n+/, '').slice(0, 160);
+        const cancellable = order.can_cancel || order.simulated;
         return `<article class="order ${esc(order.priority)}">
           <span class="order-rail"></span>
           <div class="order-main">
@@ -635,19 +844,22 @@
             <p>${esc(copy || 'Sealed task document')}</p>
             <div class="order-meta"><span>Assigned <b>${esc(order.agent_name || agent(order.agent_id || order.agent)?.name || order.agent)}</b></span><span>${esc(order.repository || 'No repository')}</span><span>${ago(order.created_at)}</span></div>
           </div>
-          <div class="order-side"><span class="status-pill ${esc(status)}">${esc(status)}</span><button class="icon-btn" title="Cancel queued order" ${order.simulated ? 'disabled' : ''} onclick="cancelOrder('${esc(order.request_id)}')">×</button></div>
+          <div class="order-side"><span class="status-pill ${esc(status)}">${esc(status.replaceAll('_',' '))}</span>${cancellable ? `<button class="icon-btn" type="button" title="Cancel queued order" aria-label="Cancel queued order ${esc(order.title || order.request_id)}" data-dashboard-action="cancel-order" data-request-id="${esc(order.request_id)}" ${order.simulated ? 'disabled' : ''}>×</button>` : ''}</div>
         </article>`;
       }).join('') : `<div class="empty"><div><span class="rune">‡</span><strong>No orders await judgment</strong><small>Issue a structured order to place work behind the serial gate.</small></div></div>`;
     }
 
     function renderAgentOptions() {
       const agents = state.registry.agents || [];
+      const orderSelect = $('#orderAgent');
+      const orderSelection = $('#orderModal').open ? orderSelect.value : '';
       if (!state.selectedAgent || !agent(state.selectedAgent)) state.selectedAgent = agents[0]?.id || '';
-      const options = agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} · ${esc(provider(a.provider_id).name)}</option>`).join('');
+      const options = agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} · ${esc(provider(a.provider_id).name)}${a.paused ? ' · orders held' : ''}</option>`).join('');
       $('#agentSelect').innerHTML = options;
-      $('#orderAgent').innerHTML = options;
+      orderSelect.innerHTML = options;
       $('#agentSelect').value = state.selectedAgent;
-      if (state.selectedAgent) $('#orderAgent').value = state.selectedAgent;
+      const orderAgent = orderSelection && agent(orderSelection) ? orderSelection : state.selectedAgent;
+      if (orderAgent) orderSelect.value = orderAgent;
       renderLiveIdentity();
     }
 
@@ -663,18 +875,36 @@
       $('#pauseAgent').textContent = selected.paused ? 'Release Orders' : 'Hold Orders';
     }
 
-    async function renderLive() {
+    async function renderLive(force=false) {
       const selected = currentAgent();
       if (!selected) { $('#liveOut').textContent = 'No agent is registered.'; return; }
       renderLiveIdentity();
-      const result = await getJSON(`/api/agent/session?session=${encodeURIComponent(selected.session || selected.id)}&lines=28`);
-      if (result && !result.error && result.output) {
+      const key = selected.session || selected.id;
+      if (!force && state.livePendingFor === key) return;
+      if (state.liveController) state.liveController.abort();
+      const controller = new AbortController();
+      const generation = ++state.liveGeneration;
+      state.liveController = controller;
+      state.livePendingFor = key;
+      try {
+        const result = await getJSON(`/api/agent/session?session=${encodeURIComponent(key)}&lines=28`, {signal:controller.signal});
+        if (generation !== state.liveGeneration || (currentAgent()?.session || currentAgent()?.id) !== key) return;
+        if (result.error || !result.output) throw new Error(result.error || 'live capture returned no output');
+        state.liveCache[key] = result.output;
         $('#liveOut').textContent = result.output;
         $('#liveSignal').className = `signal ${result.status === 'active' ? 'good' : result.status === 'stuck' ? 'bad' : ''}`;
-      } else if (state.demo) {
-        $('#liveOut').textContent = DEMO.live[selected.id] || `[SIMULATED VOX]\n${selected.name} · ${selected.role}\nProvider: ${provider(selected.provider_id).name}\nStatus: ${selected.status || 'standby'}\n\n❯ No live session. Demonstration telemetry is active.`;
-      } else {
-        $('#liveOut').textContent = `Vox silence. Session '${selected.session || selected.id}' is not online.`;
+      } catch (error) {
+        if (error.name === 'AbortError' || generation !== state.liveGeneration || (currentAgent()?.session || currentAgent()?.id) !== key) return;
+        if (state.demo) {
+          $('#liveOut').textContent = DEMO.live[selected.id] || `[SIMULATED VOX]\n${selected.name} · ${selected.role}\nProvider: ${provider(selected.provider_id).name}\nStatus: ${selected.status || 'standby'}\n\n❯ No live session. Demonstration telemetry is active.`;
+        } else if (state.liveCache[key]) {
+          $('#liveOut').textContent = `[STALE · live capture unavailable]\n\n${state.liveCache[key]}`;
+        } else {
+          $('#liveOut').textContent = `Vox unavailable. Session '${key}' could not be read.`;
+        }
+        $('#liveSignal').className = 'signal warn';
+      } finally {
+        if (generation === state.liveGeneration) state.livePendingFor = '';
       }
     }
 
@@ -702,71 +932,177 @@
       $('#approvalCount').textContent = list.length;
       $('#approvalList').innerHTML = list.length ? list.map(item => `<article class="approval">
         <div class="approval-top"><div><h3>${esc(item.title || item.id || 'Deployment rite')}</h3><p>${esc(item.summary || 'Awaiting operator risk review.')}</p></div><span class="risk">${esc(item.risk || 'review')} risk</span></div>
-        <div class="approval-actions"><button class="btn small primary" ${item.simulated ? 'disabled' : ''} onclick="decideDeployment('${esc(item.id || item.deployment_id)}','approve')">Sanction</button><button class="btn small danger" ${item.simulated ? 'disabled' : ''} onclick="decideDeployment('${esc(item.id || item.deployment_id)}','deny')">Deny</button>${item.simulated ? '<span class="tag">demonstration</span>' : ''}</div>
+        <div class="approval-actions"><button class="btn small primary" type="button" data-dashboard-action="deployment-decision" data-deployment-id="${esc(item.id || item.deployment_id)}" data-decision="approve" ${item.simulated ? 'disabled' : ''}>Sanction</button><button class="btn small danger" type="button" data-dashboard-action="deployment-decision" data-deployment-id="${esc(item.id || item.deployment_id)}" data-decision="deny" ${item.simulated ? 'disabled' : ''}>Deny</button>${item.simulated ? '<span class="tag">demonstration</span>' : ''}</div>
       </article>`).join('') : `<div class="empty"><div><span class="rune">⛨</span><strong>No rite awaits sanction</strong><small>Deployments remain inert until an explicit human decision is recorded.</small></div></div>`;
     }
 
-    function renderAll() { renderSystem(); renderOrders(); renderAgentOptions(); renderEvents(); renderProviders(); renderDeployments(); renderLive(); }
+    function renderPhaseFive() {
+      const runs = state.taskRuns || [];
+      const tickets = state.tickets || [];
+      const learningEntries = state.learnings?.entries || [];
+      const readiness = state.phase5 || {};
+      const ready = readiness.qa_gate?.ready && readiness.tickets?.ready && readiness.learnings?.ready;
+      $('#phaseFiveState').textContent = ready ? 'configured' : 'setup needed';
+      $('#phaseFiveState').className = `status-pill ${ready ? 'qa_pass' : 'queued'}`;
+
+      $('#qaRunCount').textContent = `${runs.length} run${runs.length === 1 ? '' : 's'}`;
+      $('#qaRunList').innerHTML = runs.length ? runs.map(run => {
+        const checks = run.checks || [];
+        const passed = checks.filter(check => check.passed).length;
+        const failed = checks.find(check => !check.passed);
+        const checkEvidence = checks.length ? checks.map((check, index) => {
+          const value = check.value ? `\nExpected: ${check.value}` : '';
+          return `${index + 1}. ${check.passed ? 'PASS' : 'FAIL'} · ${check.type || 'unknown'}${value}\n${check.detail || 'No detail recorded'}`;
+        }).join('\n\n') : 'No concrete check results have been recorded yet.';
+        const reportEvidence = run.result ? `\n\nCaptured report\n---------------\n${run.result}` : '';
+        return `<article class="phase-item">
+          <div class="phase-item-top"><h4>${esc(run.title || run.request_id)}</h4><span class="status-pill ${esc(run.status || 'unknown')}">${esc((run.status || 'unknown').replaceAll('_',' '))}</span></div>
+          <p>${esc(failed?.detail || run.result?.slice(0, 240) || (run.status === 'queued' ? 'Accepted and awaiting the serial dispatch gate.' : run.status === 'dispatched' ? 'Awaiting the worker completion signal.' : 'Concrete checks recorded.'))}</p>
+          <div class="phase-meta"><span>${esc(agent(run.agent)?.name || run.agent || 'worker')}</span><span>${checks.length ? `${passed}/${checks.length} checks` : run.status === 'queued' ? 'not yet dispatched' : 'baseline captured'}</span><span>${ago(run.qa_completed_at || run.dispatched_at || run.created_at)}</span></div>
+          <details class="phase-detail"><summary>Inspect full QA evidence</summary><pre class="evidence" tabindex="0">${esc(checkEvidence + reportEvidence)}</pre></details>
+        </article>`;
+      }).join('') : `<div class="empty"><div><span class="rune">⚙</span><strong>No QA runs yet</strong><small>Issue an order; its baseline is captured when the serial gate delivers it.</small></div></div>`;
+
+      $('#ticketCount').textContent = `${tickets.length} ticket${tickets.length === 1 ? '' : 's'}`;
+      $('#ticketList').innerHTML = tickets.length ? tickets.map(ticket => `<article class="phase-item">
+        <div class="phase-item-top"><h4>${esc(ticket.id)}</h4><span class="status-pill ${esc(ticket.status || 'unknown')}">${esc((ticket.status || 'unknown').replaceAll('_',' '))}</span></div>
+        <p>${esc((ticket.results || ticket.goal || 'Awaiting ticket content').slice(0, 320))}</p>
+        <div class="phase-meta"><span>${esc(ticket.owner || 'unclaimed')}</span><span>${esc(ticket.priority || 'normal')}</span><span>${esc(ticket.mode || 'report-only')}</span></div>
+        ${ticket.results || ticket.status === 'pending_review' ? `<div class="phase-actions"><button class="btn small primary" type="button" data-dashboard-action="review-ticket" data-ticket-id="${esc(ticket.id)}">Review Complete Result</button></div>` : ''}
+      </article>`).join('') : `<div class="empty"><div><span class="rune">‡</span><strong>No tickets filed</strong><small>Drop a report-only Markdown ticket into the configured vault directory.</small></div></div>`;
+
+      $('#learningCount').textContent = `${state.learnings?.count || 0} entr${state.learnings?.count === 1 ? 'y' : 'ies'}`;
+      $('#learningList').innerHTML = learningEntries.length ? learningEntries.slice().reverse().map(entry => `<div class="learning-entry">${esc(entry)}</div>`).join('') : `<div class="empty"><div><span class="rune">✥</span><strong>No learnings captured</strong><small>Record durable patterns here; Kevin remains the curator.</small></div></div>`;
+    }
+
+    function renderAll() {
+      renderSystem(); renderOrders(); renderAgentOptions(); renderEvents();
+      renderPhaseFive(); renderProviders(); renderDeployments(); renderLive();
+    }
+
+    const SLICE_SPECS = [
+      ['registry','/api/providers', value => value && Array.isArray(value.providers) && Array.isArray(value.agents), value => { state.registry = value; }],
+      ['status','/api/status', value => value && !value.error && typeof value === 'object', value => {
+        if (state.globalStopOverride) {
+          const generated = Date.parse(value.generated_at || '');
+          if (Number.isFinite(generated) && generated >= state.globalStopOverride.at) state.globalStopOverride = null;
+        }
+        state.status = value;
+      }],
+      ['orders','/api/dispatch/pending', Array.isArray, value => { state.orders = value; }],
+      ['events','/api/events?limit=80', Array.isArray, value => { state.events = value; }],
+      ['deployments','/api/deployments', Array.isArray, value => { state.deployments = value; }],
+      ['taskRuns','/api/task-runs?limit=80', Array.isArray, value => { state.taskRuns = value; }],
+      ['tickets','/api/tickets?limit=100', Array.isArray, value => { state.tickets = value; }],
+      ['learnings','/api/learnings', value => value && Array.isArray(value.entries), value => { state.learnings = value; }],
+      ['phase5','/api/phase5', value => value && typeof value === 'object', value => { state.phase5 = value; }]
+    ];
+
+    async function readSlice(spec, signal) {
+      const [name, url, validate] = spec;
+      try {
+        const value = await getJSON(url, {signal});
+        if (!validate(value)) throw new Error(`${name} returned an unexpected shape`);
+        return {name, ok:true, value};
+      } catch (error) {
+        return {name, ok:false, error:error.name === 'AbortError' ? 'request superseded' : error.message};
+      }
+    }
 
     async function refresh() {
-      const [registry, status, orders, events, deployments] = await Promise.all([
-        getJSON('/api/providers'), getJSON('/api/status'), getJSON('/api/dispatch/pending'), getJSON('/api/events?limit=80'), getJSON('/api/deployments')
-      ]);
-      if (registry) state.registry = registry;
-      state.status = status && !status.error ? status : null;
-      state.orders = Array.isArray(orders) ? orders : [];
-      state.events = Array.isArray(events) ? events : [];
-      state.deployments = Array.isArray(deployments) ? deployments : [];
-      state.demo = !registry || registry.demo_recommended || (!state.status && !state.orders.length && !state.events.length);
+      const generation = ++state.refreshGeneration;
+      if (state.refreshController) state.refreshController.abort();
+      const controller = new AbortController();
+      state.refreshController = controller;
+      const results = await Promise.all(SLICE_SPECS.map(spec => readSlice(spec, controller.signal)));
+      if (generation !== state.refreshGeneration) return;
+      results.forEach(result => {
+        const spec = SLICE_SPECS.find(item => item[0] === result.name);
+        if (result.ok) {
+          spec[3](result.value);
+          state.slices[result.name] = {attempted:true, ok:true, lastSuccess:Date.now(), error:''};
+        } else {
+          const previous = state.slices[result.name] || {};
+          state.slices[result.name] = {...previous, attempted:true, ok:false, error:result.error};
+        }
+      });
       renderAll();
     }
 
     function openOrderModal() {
+      state.orderFocus = document.activeElement;
       renderAgentOptions();
       $('#orderForm').reset();
+      setOrderFeedback('');
       if (state.selectedAgent) $('#orderAgent').value = state.selectedAgent;
       $('#orderModal').showModal();
       setTimeout(() => $('#orderTitle').focus(), 30);
     }
-    function closeOrderModal() { $('#orderModal').close(); }
+    function closeOrderModal() {
+      if ($('#orderModal').open) $('#orderModal').close();
+      const restore = state.orderFocus;
+      state.orderFocus = null;
+      restoreFocus(restore);
+    }
+    function setOrderFeedback(message) {
+      const feedback = $('#orderFeedback');
+      feedback.textContent = message || '';
+      feedback.classList.toggle('show', Boolean(message));
+    }
     async function submitOrder(event) {
       event.preventDefault();
-      const button = $('#submitOrder');
+      const button = $('#submitOrderBtn');
+      const selected = agent($('#orderAgent').value);
+      if (selected?.paused) {
+        const message = `${selected.name} is holding new orders. Release Orders in Vox Obscura or choose another agent.`;
+        setOrderFeedback(message);
+        toast(message, true);
+        return;
+      }
       button.disabled = true;
+      button.textContent = 'Sealing…';
+      setOrderFeedback('');
       const payload = {
         agent:$('#orderAgent').value, title:$('#orderTitle').value.trim(), repository:$('#orderRepository').value.trim(), branch:$('#orderBranch').value.trim(),
-        priority:$('#orderPriority').value, model:$('#orderModel').value.trim(), prompt:$('#orderPrompt').value.trim(), approval_policy:$('#orderApproval').value,
-        acceptance_criteria:$('#orderCriteria').value.split('\n').map(v => v.trim()).filter(Boolean)
+        priority:$('#orderPriority').value, prompt:$('#orderPrompt').value.trim(), approval_policy:'confirm_deploy',
+        acceptance_criteria:$('#orderCriteria').value.split('\n').map(v => v.trim()).filter(Boolean),
+        qa_mode:$('#orderQaMode').value, qa_command:$('#orderQaCommand').value.trim(),
+        required_files:$('#orderRequiredFiles').value.split('\n').map(v => v.trim()).filter(Boolean)
       };
       try {
         const result = await postJSON('/api/dispatch', payload);
         if (!result.ok) throw new Error(result.body.error || 'Order rejected');
         closeOrderModal(); toast(`Order sealed for ${agent(payload.agent)?.name || payload.agent}`); await refresh();
-      } catch (error) { toast(error.message || 'Order failed', true); }
-      finally { button.disabled = false; }
+      } catch (error) {
+        const message = error.message || 'Order failed';
+        setOrderFeedback(message);
+        toast(message, true);
+      }
+      finally { button.disabled = false; button.textContent = 'Seal & Queue Order'; }
     }
 
     async function cancelOrder(requestId) {
+      if (!validActionId(requestId)) return toast('Order identifier is invalid; no action was taken', true);
       const ok = await ask('Cancel queued order?', 'The sealed order will be removed before it reaches an agent.', 'Cancel Order');
       if (!ok) return;
       try { const result = await postJSON('/api/dispatch/cancel', {request_id:requestId}); if (!result.ok) throw new Error(result.body.error || 'Cancellation failed'); toast('Order withdrawn from the gate'); await refresh(); }
       catch (error) { toast(error.message, true); }
     }
 
-    function selectAgent(id) { state.selectedAgent = id; renderLive(); }
+    function selectAgent(id) { state.selectedAgent = id; renderLive(true); }
     function voxKey(event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendFollowUp(); } }
     async function sendFollowUp() {
       const selected = currentAgent(), input = $('#voxInput').value.trim();
       if (!selected || !input) return toast('Write an instruction for the selected agent', true);
       $('#sendVox').disabled = true;
-      try { const result = await postJSON('/api/agent/send', {session:selected.session || selected.id, input, submit:true}); if (!result.ok) throw new Error(result.body.error || 'Vox transmission failed'); $('#voxInput').value=''; toast(`Transmission sent to ${selected.name}`); setTimeout(renderLive, 800); }
+      try { const result = await postJSON('/api/agent/send', {session:selected.session || selected.id, input, submit:true}); if (!result.ok) throw new Error(result.body.error || 'Vox transmission failed'); $('#voxInput').value=''; toast(`Transmission sent to ${selected.name}`); setTimeout(() => renderLive(true), 800); }
       catch (error) { toast(error.message, true); }
       finally { $('#sendVox').disabled = false; }
     }
     async function clearLive() {
       const selected = currentAgent(); if (!selected) return;
       const ok = await ask('Clear the vox context?', `This sends /clear to ${selected.name}.`, 'Clear Vox'); if (!ok) return;
-      try { const result = await postJSON('/api/agent/clear', {session:selected.session || selected.id}); if (!result.ok) throw new Error(result.body.error || 'Clear failed'); toast(`Vox cleared for ${selected.name}`); setTimeout(renderLive, 800); }
+      try { const result = await postJSON('/api/agent/clear', {session:selected.session || selected.id}); if (!result.ok) throw new Error(result.body.error || 'Clear failed'); toast(`Vox cleared for ${selected.name}`); setTimeout(() => renderLive(true), 800); }
       catch (error) { toast(error.message, true); }
     }
     async function togglePause() {
@@ -783,16 +1119,93 @@
       catch (error) { toast(error.message, true); }
     }
 
+    function openTicketReview(ticketId, trigger) {
+      if (!validActionId(ticketId)) return toast('Ticket identifier is invalid; no action was taken', true);
+      const ticket = state.tickets.find(item => item.id === ticketId);
+      if (!ticket) return toast('This ticket is no longer available', true);
+      state.reviewTicket = ticket;
+      state.reviewFocus = trigger || document.activeElement;
+      $('#ticketReviewId').textContent = ticket.id;
+      $('#ticketReviewStatus').textContent = String(ticket.status || 'unknown').replaceAll('_',' ');
+      $('#ticketReviewOwner').textContent = ticket.owner || 'unclaimed';
+      $('#ticketReviewRoute').textContent = `${ticket.priority || 'normal'} · ${ticket.mode || 'report-only'}`;
+      $('#ticketReviewGoal').textContent = (ticket.goal || 'No goal recorded').slice(0, 1000);
+      $('#ticketReviewResult').textContent = ticket.results || 'No captured result is available. Do not accept this ticket.';
+      const pending = ticket.status === 'pending_review';
+      $('#ticketReviewAccept').hidden = !pending;
+      $('#ticketReviewBlock').hidden = !pending;
+      $('#ticketReviewAccept').disabled = !ticket.results;
+      $('#ticketReviewModal').showModal();
+      setTimeout(() => $('#ticketReviewResult').focus(), 30);
+    }
+
+    function closeTicketReview() {
+      if ($('#ticketReviewModal').open) $('#ticketReviewModal').close();
+      state.reviewTicket = null;
+      const restore = state.reviewFocus;
+      state.reviewFocus = null;
+      restoreFocus(restore, '#phase-five');
+    }
+
+    async function submitTicketReview(decision) {
+      const ticket = state.reviewTicket;
+      if (!ticket || ticket.status !== 'pending_review' || !['done','blocked'].includes(decision) || !validActionId(ticket.id)) return toast('No actionable ticket review is open', true);
+      const buttons = [$('#ticketReviewAccept'), $('#ticketReviewBlock')];
+      buttons.forEach(button => { button.disabled = true; });
+      try {
+        const result = await postJSON('/api/ticket/review', {ticket_id:ticket.id, decision});
+        if (!result.ok) throw new Error(result.body.error || 'Ticket review failed');
+        const id = ticket.id;
+        closeTicketReview();
+        toast(`Ticket ${id} marked ${decision}`);
+        await refresh();
+      } catch (error) { toast(error.message, true); }
+      finally {
+        buttons.forEach(button => { button.disabled = false; });
+        if (state.reviewTicket && !state.reviewTicket.results) $('#ticketReviewAccept').disabled = true;
+      }
+    }
+
+    async function addLearning() {
+      const text = $('#learningText').value.trim();
+      const tags = $('#learningTags').value.trim() || 'general';
+      if (!text) return toast('Write a durable learning first', true);
+      $('#addLearningBtn').disabled = true;
+      try {
+        const result = await postJSON('/api/learnings', {text, tags});
+        if (!result.ok) throw new Error(result.body.error || 'Learning was not recorded');
+        $('#learningText').value = '';
+        $('#learningTags').value = '';
+        toast('Learning recorded for human curation');
+        await refresh();
+      } catch (error) { toast(error.message, true); }
+      finally { $('#addLearningBtn').disabled = false; }
+    }
+
     async function toggleGlobalStop() {
-      const stopped = state.status?.circuit_breaker?.global_stop || state.status?.circuit_breaker?.status === 'TRIPPED';
+      const stop = globalStopState();
+      const stopped = stop.known && stop.value;
       const action = stopped ? 'release' : 'engage';
-      const ok = await ask(stopped ? 'Unseal the Rock?' : 'Seal the Rock?', stopped ? 'Release the persistent global stop and allow the serial gate to drain again.' : 'Persistently halt all new dispatches. Queued orders will remain sealed on disk.', stopped ? 'Unseal' : 'Seal');
+      const unknownCopy = !stop.known ? ' Current stop state is unavailable, so this action can only engage—not release—the emergency seal.' : '';
+      const ok = await ask(stopped ? 'Unseal the Rock?' : 'Seal the Rock?', stopped ? 'Release the persistent global stop and allow the serial gate to drain again.' : `Persistently halt all new dispatches. Queued orders will remain sealed on disk.${unknownCopy}`, stopped ? 'Unseal' : 'Seal');
       if (!ok) return;
-      try { const result = await postJSON('/api/control/global-stop', {action, reason:'Operator engaged the emergency seal from Mission Control'}); if (!result.ok) throw new Error(result.body.error || 'Global stop failed'); toast(stopped ? 'The Rock is unsealed' : 'The Rock is sealed'); await refresh(); }
-      catch (error) { toast(error.message, true); }
+      try {
+        const result = await postJSON('/api/control/global-stop', {action, reason:'Operator engaged the emergency seal from Mission Control'});
+        if (!result.ok) throw new Error(result.body.error || 'Global stop failed');
+        state.globalStopOverride = {value:action === 'engage', at:Date.now()};
+        setControlFeedback('');
+        renderSystem();
+        toast(stopped ? 'The Rock is unsealed' : 'The Rock is sealed');
+        await refresh();
+      } catch (error) {
+        const message = error.message || 'Global stop failed';
+        setControlFeedback(`Emergency seal action failed: ${message}`, true);
+        toast(message, true);
+      }
     }
 
     async function decideDeployment(id, decision) {
+      if (!validActionId(id) || !['approve','deny'].includes(decision)) return toast('Deployment decision identifiers are invalid; no action was taken', true);
       const ok = await ask(`${decision === 'approve' ? 'Sanction' : 'Deny'} deployment?`, `This records an explicit ${decision} decision for deployment ${id}.`, decision === 'approve' ? 'Sanction' : 'Deny');
       if (!ok) return;
       try { const result = await postJSON('/api/deploy/decision', {deployment_id:id, decision}); if (!result.ok) throw new Error(result.body.error || 'Decision failed'); toast(`Deployment ${decision === 'approve' ? 'sanctioned' : 'denied'}`); await refresh(); }
@@ -801,12 +1214,37 @@
 
     function ask(title, copy, accept='Sanction') {
       return new Promise(resolve => {
-        state.confirm = resolve; $('#confirmTitle').textContent = title; $('#confirmCopy').textContent = copy; $('#confirmAccept').textContent = accept; $('#confirmModal').showModal();
+        state.confirm = resolve; state.confirmFocus = document.activeElement; $('#confirmTitle').textContent = title; $('#confirmCopy').textContent = copy; $('#confirmAccept').textContent = accept; $('#confirmModal').showModal(); setTimeout(() => $('#confirmAccept').focus(), 30);
       });
     }
-    function closeConfirm(value) { $('#confirmModal').close(); const resolve = state.confirm; state.confirm = null; if (resolve) resolve(value); }
+    function closeConfirm(value) {
+      if ($('#confirmModal').open) $('#confirmModal').close();
+      const resolve = state.confirm, restore = state.confirmFocus;
+      state.confirm = null; state.confirmFocus = null;
+      restoreFocus(restore);
+      if (resolve) resolve(value);
+    }
     $('#confirmModal').addEventListener('cancel', event => { event.preventDefault(); closeConfirm(false); });
-    $('#orderModal').addEventListener('cancel', () => $('#orderModal').close());
+    $('#orderModal').addEventListener('cancel', event => { event.preventDefault(); closeOrderModal(); });
+    $('#ticketReviewModal').addEventListener('cancel', event => { event.preventDefault(); closeTicketReview(); });
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-dashboard-action]');
+      if (!button || button.disabled) return;
+      const action = button.dataset.dashboardAction;
+      if (action === 'cancel-order') {
+        const id = button.dataset.requestId || '';
+        if (!validActionId(id)) return toast('Order identifier is invalid; no action was taken', true);
+        cancelOrder(id);
+      } else if (action === 'review-ticket') {
+        const id = button.dataset.ticketId || '';
+        if (!validActionId(id)) return toast('Ticket identifier is invalid; no action was taken', true);
+        openTicketReview(id, button);
+      } else if (action === 'deployment-decision') {
+        const id = button.dataset.deploymentId || '', decision = button.dataset.decision || '';
+        if (!validActionId(id) || !['approve','deny'].includes(decision)) return toast('Deployment decision identifiers are invalid; no action was taken', true);
+        decideDeployment(id, decision);
+      }
+    });
 
     refresh();
     setInterval(refresh, 5000);

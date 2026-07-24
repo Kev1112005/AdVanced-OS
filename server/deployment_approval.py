@@ -169,7 +169,18 @@ def _atomic_write(path, record):
         with open(temporary, "w", encoding="utf-8") as handle:
             json.dump(record, handle, indent=2)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temporary, path)
+        try:
+            directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        except (AttributeError, OSError):
+            directory_fd = None
+        if directory_fd is not None:
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     finally:
         try:
             temporary.unlink()

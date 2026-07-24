@@ -12,7 +12,9 @@ Restart=on-failure
 RestartSec=3
 TimeoutStopSec=10
 NoNewPrivileges=true
-PrivateTmp=true
+# Local tmux uses /tmp/tmux-UID for its server socket. Mission Control is a
+# trusted local control surface and must share that namespace for Vox/control.
+PrivateTmp=false
 
 [Install]
 WantedBy=multi-user.target

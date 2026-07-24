@@ -95,6 +95,11 @@
 
 **Rationale:** Shell commands are cheaper, faster, and have no model bias. If a file exists or a test passes, we don't need an LLM to tell us. The only thing we lose is evaluation of subjective quality (code style, architectural fit), which is Kevin's job.
 
+The implemented delivery contract registers typed checks and a git baseline at
+actual serial-gate delivery, then receives the worker's completion through the
+async request boundary. Report-only tickets require a captured result and stop
+at human review. See [Decision 009](docs/decisions/009-phase5-delivery-contract.md).
+
 ## Observability
 
 ### Decision: Structured Event Log, Not a Tracing DB

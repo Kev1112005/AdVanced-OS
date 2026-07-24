@@ -17,6 +17,8 @@ YAML frontmatter + Markdown body. Compatible with the Obsidian vault's markdown-
 | `created` | ISO 8601 timestamp |
 | `owner` | Worker or human who last touched it |
 | `priority` | low / medium / high / critical |
+| `mode` | Must be `report-only` for automatic Phase 5g intake |
+| `agent` | Allowed report-only worker; defaults to `ezekiel` |
 | `Goal` | What success looks like — the outcome, not the instruction |
 | `Context` | Links, files, memory references the worker needs |
 | `Acceptance Criteria` | Concrete checks (gates the 5e QA gate runs against) |
@@ -32,6 +34,8 @@ status: fresh
 created: 2026-07-01T14:30:00Z
 owner: ""
 priority: medium
+mode: report-only
+agent: ezekiel
 loop: "daily-triage"
 ---
 
@@ -69,5 +73,9 @@ drop-offs (signed up → cancelled) and bench availability.
 - **No LLM verifier.** Acceptance criteria are checked by the Phase 5e Hermes-run QA gate (shell commands).
 - **No post-run critique.** Pattern accumulation goes in the compound learning file (5d), not auto-adjusted loop behavior.
 - **No unattended tier.** L1 report-only only. Kevin reviews results before any action.
+- **No autonomous completion.** Passing QA moves a ticket to `pending_review`.
+  Only Kevin can mark it `done` from Mission Control.
+- **Allowlisted routing.** Automatic intake defaults to `ezekiel`. Additional
+  report-only profiles require an explicit `HERMES_TICKET_AGENTS` allowlist.
 - **No token budgets.** The circuit breaker (Phase 2) owns spend cap + time cap globally.
 - **Backend:** Start with a `tickets/` directory in the vault (simplest, git-backed). Upgrade to Linear via MCP only if Kevin needs querying/notifications.

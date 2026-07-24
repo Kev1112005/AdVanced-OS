@@ -22,7 +22,8 @@ This repository contains the **Agentic Operating System layer** — the orchestr
 
 **Do NOT build:**
 - TypeScript/JavaScript application code (that's the coding worker's domain, dispatched via Hermes to Claude Code)
-- Full-featured web dashboards (unless explicitly requested as Phase 5c)
+- Framework-backed or multi-user dashboard products. Extend the existing
+  static Mission Control page only when the implementation plan calls for it.
 - Database schemas or API routes (those belong in the application repos, not the OS repo)
 
 ## Code Conventions

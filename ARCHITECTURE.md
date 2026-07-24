@@ -17,6 +17,12 @@ Two complementary interfaces sit above the orchestrator. They share the same bac
 
 The GUI is the primary interface and local control surface. It can issue structured orders, follow up with live agents, hold or interrupt work, restart configured sessions, record deployment decisions, and engage the disk-backed global stop. The CLI remains the remote control surface. Both share the same provider registry, durable order queue, event log, status snapshot, deployment request and decision directories, and safety state.
 
+Phase 5 adds three more flat-file surfaces to the same GUI: immutable QA run
+state in `~/.hermes/task-runs/`, report-only vault tickets in
+`~/vaults/kevin/tickets/`, and the human-curated
+`~/hermes-learnings.md`. The existing serial dispatch consumer scans tickets
+and handles async QA completions; no second scheduler or dispatch path exists.
+
 Deployment approval is a file-backed interface contract. A pipeline writes one
 request to `~/.hermes/deploy-requests/`, Mission Control or Hermes records Kevin's
 explicit decision in `~/.hermes/approvals/`, and the deployment procedure calls
@@ -112,10 +118,10 @@ Claude Code (tmux session)
   │  2. Reads relevant files
   │  3. Implements changes
   │  4. Runs tests
-  │  5. Signals completion at ❯ prompt
+  │  5. Commits delivery and writes an async `hermes-request qa`
   ▼
 Hermes
-  │  5a. Runs QA gate (checks success criteria)
+  │  5a. Runs QA gate (checks the registered concrete contract)
   │  5b. Verifies git state (commit landed? branch correct?)
   │  6. Reports to Kevin
   │  7. Kevin approves publication → Hermes pushes branch, opens PR
@@ -128,6 +134,19 @@ Hermes
   ▼
 Kevin (Discord)
       Receives deployment confirmation
+```
+
+### Report-Only Ticket Flow
+
+```text
+Kevin writes fresh Markdown ticket
+  → existing serial consumer poll claims it
+  → circuit breaker admits or rejects it
+  → allowlisted report-only worker receives it
+  → worker writes result file + async QA request
+  → Hermes verifies result presence
+  → ticket becomes pending_review
+  → Kevin alone marks done or blocked in Mission Control
 ```
 
 ### Research Flow (planned, Phase 5f)

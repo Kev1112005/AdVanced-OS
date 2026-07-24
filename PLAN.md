@@ -22,8 +22,8 @@
 | Phase 3 | Complete | Mission Control, provider registry, event log, status snapshot, durable orders, and operator controls implemented |
 | Phase 4 | Complete | Durable Discord deploy summaries and immutable approve/deny decisions shared with Mission Control |
 | Phase 1a | Complete | Async request/notification bridge and serial dispatch consumer implemented |
-| Phase 5 | In progress | Targeted alerting, retry/backoff, heartbeat checks, and pipeline verification exist |
-| Phase 5e | **Next** | Concrete shell QA gate must precede unattended ticket intake |
+| Phase 5 | Operational | Alerting/backoff, QA delivery gate, compound learnings, and report-only ticket intake feed Mission Control |
+| Phase 5f | Deferred stretch | Existing profiles remain manually configured; add more tool-scoped profiles only when worker diversity warrants it |
 
 ## Interface Architecture
 
@@ -129,11 +129,11 @@ Two shell commands workers can call asynchronously (gated behind circuit breaker
 - **Graceful degradation:** If MCP is down → alert + back off. Rate-limited → wait + retry. Model unavailable → fallback model.
 - **Session checkpointing:** NOT building. It's a fiction. DR = small, committed, idempotent tasks.
 
-### Phase 5d: Compound Learning File (CHEAP — 30 minutes)
+### Phase 5d: Compound Learning File (COMPLETE)
 
 A `~/hermes-learnings.md` file that accumulates cross-session patterns, gotchas, and conventions. Hermes maintains the file, reads it before dispatch, and injects relevant learnings into the task document preamble. Kevin prunes it like skills — manual curation is correct.
 
-### Phase 5e: Hermes-Run QA Gate (CHEAP — 30 minutes)
+### Phase 5e: Hermes-Run QA Gate (COMPLETE)
 
 After Claude finishes a task but before Hermes accepts delivery, Hermes evaluates the output against the task document's success criteria using shell commands. Commit landed? Tests pass? Required files changed? If criteria aren't met, Hermes sends the failure analysis back to Claude for another pass.
 
@@ -141,7 +141,7 @@ After Claude finishes a task but before Hermes accepts delivery, Hermes evaluate
 
 Tool-scoped worker profiles that Hermes can dispatch via `delegate_task` with restricted tool sets. Research (Read/Glob/Grep/Web, no Write), code-review (Read/Glob/Grep/Git, no Bash), general (full tools). Hermes maintains a registry at `~/.hermes/workers/`.
 
-### Phase 5g: Async Ticket Surface (LOW — half day)
+### Phase 5g: Async Ticket Surface (COMPLETE)
 
 Kevin drops tickets into a `tickets/` vault directory; Hermes scans on cron, dispatches through the serial channel with circuit-breaker lock held. Verification via the 5e shell gate. No LLM verifier, no post-run critique, no unattended tier.
 
@@ -162,10 +162,10 @@ Kevin drops tickets into a `tickets/` vault directory; Hermes scans on cron, dis
 | Mission Control dashboard | No visual dashboard. Terminal-only. | Phase 3 — core deliverable. GUI is the primary interface. | **CORE** |
 | Structured observability | Correlation ID, no structured format. | Phase 3 data layer — event log at dispatch/complete/fail boundaries. | CORE |
 | Cost analytics dashboard | No visual cost display. | Phase 3 GUI — spend-to-cap meters, per-worker breakdowns, trend lines. | CORE |
-| Hermes-run QA gate | Manual verification only. | Phase 5e — success criteria checked after worker signals completion. | MEDIUM |
+| Hermes-run QA gate | Concrete delivery checks and immutable results feed Mission Control. | Operate through `qa-gate.sh`; keep checks shell-verifiable. | COMPLETE |
 | Tool-scoped worker profiles | Every dispatch to same general worker. | Phase 5f — worker registry with restricted toolsets. | STRETCH |
-| Compound learning | Manual skill curation. No cross-session file. | Phase 5d — Hermes-curated, injected into task docs. | LOW |
-| Async ticket surface | Kevin must be in Discord to initiate work. | Phase 5g — tickets/ vault directory, Hermes scans on cron. | LOW |
+| Compound learning | Append-only, human-curated file is injected into task docs. | Curate in Mission Control or `compound-learning.sh`. | COMPLETE |
+| Async ticket surface | Report-only vault tickets share the existing serial consumer poll. | Kevin reviews every result in Mission Control. | COMPLETE |
 | Subagent/profile spawning | Manually wired as needed. | Manual `hermes setup` until >5 profiles. | NOT NEEDED |
 | One-click backup/restore | Manual backup only. | Not needed until complexity justifies it. | NOT NEEDED |
 | Loop self-critique / maker-checker LLM verifier | Not proposed. | DO_NOT_BUILD — duplicates Decisions 006 & 007. | NOT NEEDED |

@@ -65,16 +65,15 @@ Parse Claude Code's usage output and append a row:
 ## 3. Cron jobs
 
 The breaker is invoked inline per dispatch (§2b) — not on a timer. The only
-scheduled jobs are housekeeping:
+scheduled cost job is reporting:
 
 ```cron
 # Weekly spend report to the officers channel — Monday 09:00
 0 9 * * 1  ~/.hermes/scripts/cost-log.sh summary >> ~/.hermes/logs/weekly-summary.jsonl
-
-# Clear a stale global-stop flag daily (belt-and-suspenders; the script also
-# auto-expires flags older than 24h on read)
-0 3 * * *  ~/.hermes/scripts/global-stop.sh status >/dev/null
 ```
+
+The global-stop flag never expires and must never be cleared by cron or a
+watchdog. Only Kevin's explicit `global-stop.sh clear` releases the brake.
 
 Time-cap enforcement (`time_cap.max_minutes`) is done by the orchestrator
 during monitoring, not by the breaker on dispatch — see PLAN.md Phase 5.

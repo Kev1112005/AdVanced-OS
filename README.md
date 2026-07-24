@@ -10,7 +10,8 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 
 - Not an agent framework (LangGraph, CrewAI, AIOS) — those own the LLM loop. We don't.
 - Not a coding agent (Claude Code, Codex, opencode) — those write code. We orchestrate them.
-- Not a GUI dashboard (for now) — the control surface is Discord + terminal. A visual layer is a stretch goal.
+- Not a general multi-user dashboard product — Mission Control is the trusted
+  local interface for this operating system.
 - Not an Anthropic product — Claude is one worker among many. The OS is built around Hermes.
 
 ## Core Architecture
@@ -80,11 +81,11 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 | Agent status snapshot (JSON endpoint for GUI) | Implemented | Phase 3 |
 | Discord approval UX (deploy summaries, confirm-before-deploy) | Implemented | Phase 4 |
 | Async shell bridge (hermes-request, hermes-notify) | Implemented | Phase 1a |
-| Production hardening (targeted alerts and backoff) | In progress | Phase 5 |
-| Hermes-run QA gate (success criteria verification) | Planned | Phase 5e |
-| Compound learning file (cross-session pattern accumulation) | Planned | Phase 5d |
+| Production hardening (targeted alerts and backoff) | Operational | Phase 5 |
+| Hermes-run QA gate (success criteria verification) | Implemented | Phase 5e |
+| Compound learning file (cross-session pattern accumulation) | Implemented | Phase 5d |
 | Tool-scoped worker profiles (research/code-review/general) | Stretch | Phase 5f |
-| Async ticket surface (vault-based tickets) | Planned | Phase 5g |
+| Async ticket surface (report-only, vault-based tickets) | Implemented | Phase 5g |
 
 Cost collection remains available in `scripts/cost-log.sh`, but automatic collection and
 dashboard cost views are intentionally disabled: Claude development is covered by a
@@ -129,6 +130,18 @@ After updating the checkout, restart the service explicitly:
 git pull
 ./scripts/dashboard-service.sh restart
 ```
+
+Install the Phase 5 runtime hooks and initialize the ticket/learning surfaces:
+
+```bash
+./scripts/phase5-setup.sh install
+./scripts/dashboard-service.sh restart
+./scripts/phase5-setup.sh status
+```
+
+The dashboard then exposes QA runs, async tickets, and compound learnings in the
+Phase V Operations panel. See the
+[Phase 5 operations guide](docs/setup/phase5-operations.md).
 
 ## Deployment Approval
 
@@ -175,11 +188,12 @@ AdVanced OS is built around **Hermes Agent** (by Nous Research). Hermes is the o
 
 ## Status
 
-**Phase:** Phase 4 complete; Phase 5e is next
+**Phase:** Phase 5 operational; Phase 5f remains a deferred stretch
 
 The circuit breaker, correlation IDs, async bridge, structured event log, status
-snapshot, durable dispatch queue, Mission Control GUI, and Discord deployment
-approval gate are implemented. The next core milestone is the Hermes-run shell QA
-gate before any further unattended intake automation.
+snapshot, durable dispatch queue, Mission Control GUI, Discord deployment
+approval gate, concrete QA delivery gate, compound learning file, and report-only
+ticket surface are implemented. Additional tool-scoped profiles remain optional
+until worker diversity justifies them.
 
 See [PLAN.md](PLAN.md) for the full roadmap.

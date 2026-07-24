@@ -28,8 +28,8 @@ disk (`~/.hermes/stop`) so it survives a watchdog restart.
 scripts/global-stop.sh status    # see who/why/when
 scripts/global-stop.sh clear     # release the brake
 ```
-The flag auto-clears if it's older than 24h (stale watchdog leftover) — you'll
-see a warning when that happens.
+The flag never expires. A watchdog restart, host reboot, age check, or status
+read cannot release it; only Kevin's explicit `clear` may do so.
 
 ### 2. Dispatch depth (exit 2) — "BLOCKED: Dispatch depth limit reached (3)"
 A single request chained too many sub-dispatches (A dispatches B dispatches C…).

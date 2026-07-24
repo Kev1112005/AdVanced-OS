@@ -6,7 +6,6 @@
 set -euo pipefail
 
 FLAG_FILE="${HERMES_STOP_FILE:-$HOME/.hermes/stop}"
-STALE_HOURS=24
 
 usage() {
   cat <<EOF
@@ -18,38 +17,36 @@ Usage:
   global-stop.sh check          Exit 0 STOPPED / exit 1 RUNNING (for 'if')
   global-stop.sh status         JSON: status, timestamp, reason
 
-Flag auto-clears if older than ${STALE_HOURS}h (stale watchdog leftover).
+The flag never expires. Only an explicit clear releases the stop.
 Env: HERMES_STOP_FILE overrides flag path (default ~/.hermes/stop)
 EOF
 }
 
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# read a "key: value" field from the flag file
-field() { sed -n "s/^$1: //p" "$FLAG_FILE" 2>/dev/null | head -n1; }
-
-# Auto-clear if the flag is older than STALE_HOURS. Warns on stderr. Returns 0 if cleared.
-expire_if_stale() {
-  [[ -f "$FLAG_FILE" ]] || return 1
-  local age_s
-  age_s=$(( $(date +%s) - $(date -r "$FLAG_FILE" +%s) ))
-  if [[ "$age_s" -gt $((STALE_HOURS * 3600)) ]]; then
-    echo "warning: stop flag older than ${STALE_HOURS}h — auto-clearing stale flag" >&2
-    rm -f "$FLAG_FILE"
-    return 0
-  fi
-  return 1
+clean_field() {
+  local value="${1:-}"
+  value="${value//$'\n'/ }"
+  value="${value//$'\r'/ }"
+  printf '%s' "$value"
 }
 
 cmd="${1:-}"
 case "$cmd" in
   set)
-    reason="${2:-Manual stop — Kevin requested}"
+    reason="$(clean_field "${2:-Manual stop — Kevin requested}")"
+    set_by="$(clean_field "${USER:-kevin}")"
+    mkdir -p "$(dirname "$FLAG_FILE")"
+    umask 077
+    temporary="$(mktemp "${FLAG_FILE}.tmp.XXXXXX")"
+    trap 'rm -f "${temporary:-}"' EXIT
     {
-      echo "stopped_at: $(now_utc)"
-      echo "reason: $reason"
-      echo "set_by: ${USER:-kevin}"
-    } > "$FLAG_FILE"
+      printf 'stopped_at: %s\n' "$(now_utc)"
+      printf 'reason: %s\n' "$reason"
+      printf 'set_by: %s\n' "$set_by"
+    } > "$temporary"
+    mv -f "$temporary" "$FLAG_FILE"
+    trap - EXIT
     echo "STOPPED: flag set at $FLAG_FILE"
     ;;
   clear)
@@ -57,7 +54,6 @@ case "$cmd" in
     echo "RUNNING: flag cleared"
     ;;
   check)
-    expire_if_stale || true
     if [[ -f "$FLAG_FILE" ]]; then
       echo "STOPPED"; exit 0
     else
@@ -65,10 +61,24 @@ case "$cmd" in
     fi
     ;;
   status)
-    expire_if_stale || true
     if [[ -f "$FLAG_FILE" ]]; then
-      printf '{"status": "STOPPED", "stopped_at": "%s", "reason": "%s", "set_by": "%s"}\n' \
-        "$(field stopped_at)" "$(field reason)" "$(field set_by)"
+      python3 - "$FLAG_FILE" <<'PY'
+import json
+import pathlib
+import sys
+
+fields = {}
+for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    key, separator, value = line.partition(": ")
+    if separator and key in {"stopped_at", "reason", "set_by"} and key not in fields:
+        fields[key] = value
+print(json.dumps({
+    "status": "STOPPED",
+    "stopped_at": fields.get("stopped_at") or None,
+    "reason": fields.get("reason") or None,
+    "set_by": fields.get("set_by") or None,
+}))
+PY
     else
       printf '{"status": "RUNNING", "stopped_at": null, "reason": null, "set_by": null}\n'
     fi
