@@ -20,11 +20,11 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 │                       KEVIN                                   │
 │  ┌─────────────────────┐    ┌──────────────────────────────┐ │
 │  │ Mission Control GUI  │    │    Discord CLI              │ │
-│  │ (awareness surface)  │    │ (control surface)           │ │
-│  │ • Worker status      │    │ • Dispatch                  │ │
-│  │ • Event feed         │    │ • Approve deploy            │ │
-│  │ • Cost/spend meters  │    │ • Global stop               │ │
-│  │ • System health      │    │ • Configure                 │ │
+│  │ (local command)      │    │ (remote command)            │ │
+│  │ • Provider status    │    │ • Conversational dispatch   │ │
+│  │ • Task queue + vox   │    │ • Remote approvals          │ │
+│  │ • Deploy approvals   │    │ • Global stop               │ │
+│  │ • Event chronicle    │    │ • Configure                 │ │
 │  └─────────┬───────────┘    └──────────┬───────────────────┘ │
 └────────────┼───────────────────────────┼─────────────────────┘
              │                           │
@@ -58,7 +58,7 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 
 ## Design Principles
 
-1. **The GUI is the primary interface** — the Mission Control dashboard shows every agent, every task, every cost. The CLI is for control actions faster by keyboard.
+1. **The GUI is the primary interface** — Mission Control shows every provider, agent, task, and event, and exposes explicit local controls. Discord remains the complementary remote interface.
 2. **Hermes does not write production code** — that's the worker's job, via task docs
 3. **Workers do not trigger deploys, cron changes, or state mutations** — those are Hermes's job, behind Kevin's approval
 4. **No synchronous callbacks across the dispatch channel** — async request files only
@@ -71,19 +71,25 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 
 | Feature | Status | Phase |
 |---------|--------|-------|
-| Circuit breaker (spend cap, dispatch depth, global stop) | Planned | Phase 2 |
-| Correlation ID tracing | Planned | Phase 1b |
-| Cost logging (per-task, GUI-displayed spend meters) | Planned | Phase 1c |
-| **Mission Control GUI** (worker status, event feed, cost meters, system health) | **Planned** | **Phase 3** |
-| Structured observability (event log feeding the GUI) | Planned | Phase 3 |
-| Agent status snapshot (JSON endpoint for GUI) | Planned | Phase 3 |
+| Circuit breaker (spend cap, dispatch depth, global stop) | Implemented | Phase 2 |
+| Correlation ID tracing | Implemented | Phase 1b |
+| Cost logging (per-task, GUI-displayed spend meters) | Disabled by operator decision | Phase 1c |
+| **Mission Control GUI** (provider registry, task queue, live output, event feed, controls) | **Implemented** | **Phase 3** |
+| Provider registry (Codex, Claude Code, Hermes) | Implemented | Phase 3 |
+| Structured observability (event log feeding the GUI) | Implemented | Phase 3 |
+| Agent status snapshot (JSON endpoint for GUI) | Implemented | Phase 3 |
 | Discord approval UX (deploy summaries, confirm-before-deploy) | Planned | Phase 4 |
-| Async shell bridge (hermes-request, hermes-notify) | Planned | Phase 1a |
-| Production hardening (graceful degradation) | Planned | Phase 5 |
+| Async shell bridge (hermes-request, hermes-notify) | Implemented | Phase 1a |
+| Production hardening (targeted alerts and backoff) | In progress | Phase 5 |
 | Hermes-run QA gate (success criteria verification) | Planned | Phase 5e |
 | Compound learning file (cross-session pattern accumulation) | Planned | Phase 5d |
 | Tool-scoped worker profiles (research/code-review/general) | Stretch | Phase 5f |
 | Async ticket surface (vault-based tickets) | Planned | Phase 5g |
+
+Cost collection remains available in `scripts/cost-log.sh`, but automatic collection and
+dashboard cost views are intentionally disabled: Claude development is covered by a
+subscription, so cost-over-time telemetry does not currently inform operator decisions.
+
 ## Quick Start
 
 ```bash
@@ -105,6 +111,23 @@ cat DESIGN_DECISIONS.md
 
 # See what NOT to build
 cat DO_NOT_BUILD.md
+```
+
+## Mission Control Service
+
+Mission Control runs on port 4001. Install it as a systemd-managed service so backend
+changes take effect after a pull and the process restarts automatically on failure:
+
+```bash
+./scripts/dashboard-service.sh install
+./scripts/dashboard-service.sh status
+```
+
+After updating the checkout, restart the service explicitly:
+
+```bash
+git pull
+./scripts/dashboard-service.sh restart
 ```
 
 ## Directory Structure
@@ -136,8 +159,11 @@ AdVanced OS is built around **Hermes Agent** (by Nous Research). Hermes is the o
 
 ## Status
 
-**Phase:** Design / Scaffolding
+**Phase:** Phase 3 complete; Phase 4 is next
 
-The architecture is documented, the plan is finalized, and the implementation order is set. Build starts with the circuit breaker (Phase 2) — everything else follows.
+The circuit breaker, correlation IDs, async bridge, structured event log, status
+snapshot, durable dispatch queue, and Mission Control GUI are implemented. The next
+core milestone is Discord deployment approval UX, followed by the Hermes-run shell QA
+gate before any further unattended intake automation.
 
 See [PLAN.md](PLAN.md) for the full roadmap.

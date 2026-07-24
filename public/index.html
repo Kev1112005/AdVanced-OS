@@ -1,585 +1,815 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AdVanced OS — Mission Control</title>
-<style>
-  :root {
-    --bg: #0a0e14; --panel: #10161f; --panel2: #0d1219; --line: #1c2734;
-    --green: #2dce89; --gold: #ffd700; --text: #c7d0da; --dim: #6b7885;
-    --blue: #3b82f6; --red: #ef4444; --orange: #f59e0b;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  }
-  a { color: var(--green); }
-  .topbar {
-    display: flex; align-items: center; gap: 16px; padding: 12px 20px;
-    background: linear-gradient(90deg, #0d1a14, var(--panel));
-    border-bottom: 1px solid var(--line);
-  }
-  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--dim); box-shadow: 0 0 8px currentColor; color: var(--dim); }
-  .dot.ok { background: var(--green); color: var(--green); }
-  .dot.warn { background: var(--orange); color: var(--orange); }
-  .dot.bad { background: var(--red); color: var(--red); }
-  h1 { font-size: 16px; margin: 0; letter-spacing: 1px; color: var(--gold); font-weight: 600; }
-  h1 small { color: var(--dim); font-weight: 400; letter-spacing: 0; }
-  .badge { padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; border: 1px solid var(--line); }
-  .badge.pass { color: var(--green); border-color: var(--green); }
-  .badge.trip { color: var(--red); border-color: var(--red); }
-  .spacer { flex: 1; }
-  .spendbar { width: 200px; }
-  .bar { height: 8px; background: var(--panel2); border-radius: 4px; overflow: hidden; border: 1px solid var(--line); }
-  .bar > i { display: block; height: 100%; background: var(--green); transition: width .4s; }
-  .bar.hot > i { background: var(--orange); }
-  .bar.over > i { background: var(--red); }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 20px; max-width: 1400px; }
-  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
-  .panel > h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--gold); margin: 0 0 12px; }
-  .muted { color: var(--dim); font-style: italic; }
-  /* workers */
-  .workers-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  @media (max-width: 560px) { .workers-grid { grid-template-columns: 1fr; } }
-  .wcard { border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-  .wcard .head { display: flex; align-items: center; gap: 10px; }
-  .wcard .icon { width: 36px; height: 36px; border-radius: 6px; display: grid; place-items: center; background: #14231a; font-size: 20px; }
-  .wcard.active .icon { animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(45,206,137,.5); } 50% { box-shadow: 0 0 0 5px rgba(45,206,137,0); } }
-  .wcard .name { font-weight: 600; color: var(--text); }
-  .wcard .meta { color: var(--dim); font-size: 11px; }
-  .dispatch { display: flex; gap: 6px; }
-  .dispatch textarea { flex: 1; resize: vertical; min-height: 34px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; font: inherit; font-size: 12px; }
-  .dispatch textarea:focus { outline: none; border-color: var(--green); }
-  .dispatch button { align-self: stretch; padding: 0 12px; background: #14231a; color: var(--green); border: 1px solid var(--green); border-radius: 5px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
-  .dispatch button:hover { background: var(--green); color: var(--bg); }
-  .dispatch button:disabled { opacity: .5; cursor: default; }
-  .dispatch button.sent { background: var(--red); color: var(--bg); border-color: var(--red); }
-  .dispatch button.sent:hover { background: var(--red); color: var(--bg); }
-  /* pending dispatches */
-  .req { padding: 6px 8px; border-left: 3px solid var(--blue); background: var(--panel2); margin-bottom: 4px; font-size: 12.5px; }
-  .req .a { color: var(--gold); font-weight: 600; }
-  .req .t { color: var(--dim); }
-  /* development pipelines */
-  .pipe { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); margin-bottom: 8px; }
-  .pipe.done { opacity: .6; }
-  .pipe .pname { font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
-  .pipe .pname .check { color: var(--green); }
-  .pipe .stages { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; }
-  .pipe .stg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); }
-  .pipe .sdot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
-  .pipe .stg.completed .sdot { background: var(--green); }
-  .pipe .stg.completed { color: var(--green); }
-  .pipe .stg.active .sdot { background: var(--gold); animation: pulse 1.4s ease-in-out infinite; }
-  .pipe .stg.active { color: var(--gold); }
-  .pipe .stg.failed .sdot { background: var(--red); }
-  .pipe .stg.failed { color: var(--red); }
-  .pipe .arrow { color: var(--line); }
-  .pipe .pmeta { color: var(--dim); font-size: 11px; }
-  /* toast */
-  #toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel); border: 1px solid var(--green); color: var(--green); padding: 10px 16px; border-radius: 6px; opacity: 0; transform: translateY(8px); transition: .3s; pointer-events: none; }
-  #toast.show { opacity: 1; transform: translateY(0); }
-  #toast.err { border-color: var(--red); color: var(--red); }
-  .pill { margin-left: auto; padding: 3px 10px; border-radius: 12px; font-size: 11px; text-transform: uppercase; }
-  .pill.active { background: rgba(45,206,137,.15); color: var(--green); }
-  .pill.idle   { background: rgba(107,120,133,.15); color: var(--dim); }
-  .pill.offline { background: rgba(107,120,133,.08); color: #5a6570; }
-  .pill.dead, .pill.error { background: rgba(239,68,68,.15); color: var(--red); }
-  .pill.stuck { background: rgba(245,158,11,.2); color: var(--orange); animation: blink 1s step-start infinite; }
-  .pill.unknown { background: rgba(245,158,11,.15); color: var(--orange); }
-  @keyframes blink { 50% { opacity: .35; } }
-  .dot.stuck { background: var(--orange); color: var(--orange); animation: blink 1s step-start infinite; }
-  .wcard.stuck .icon { animation: blink 1s step-start infinite; }
-  /* events */
-  #events { max-height: 340px; overflow-y: auto; }
-  .ev { display: grid; grid-template-columns: 62px 90px 1fr; gap: 8px; padding: 5px 6px; border-left: 3px solid var(--dim); margin-bottom: 3px; font-size: 12.5px; background: var(--panel2); }
-  .ev .t { color: var(--dim); }
-  .ev .a { color: var(--gold); }
-  .ev.dispatch { border-color: var(--blue); }
-  .ev.complete, .ev.qa_pass, .ev.approve, .ev.deploy, .ev.start { border-color: var(--green); }
-  .ev.fail, .ev.qa_fail, .ev.deny { border-color: var(--red); }
-  .ev.circuit_break, .ev.stop { border-color: var(--orange); }
-  /* cost */
-  .kv { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dotted var(--line); }
-  .kv b { color: var(--gold); }
-  /* table */
-  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-  th { color: var(--dim); font-weight: 400; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
-  .st { padding: 2px 8px; border-radius: 10px; font-size: 11px; }
-  .st.ok { background: rgba(45,206,137,.15); color: var(--green); }
-  .st.fail { background: rgba(239,68,68,.15); color: var(--red); }
-  .foot { color: var(--dim); font-size: 11px; padding: 0 20px 20px; }
-  /* live output */
-  #livePanel { margin: 0 20px 16px; max-width: 1400px; }
-  #livePanel .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  #livePanel .head h2 { margin: 0; }
-  #liveSelect { margin-left: auto; background: var(--bg); color: var(--text); border: 1px solid var(--line);
-                border-radius: 5px; padding: 4px 8px; font: inherit; font-size: 12px; }
-  #liveSelect:focus { outline: none; border-color: var(--green); }
-  .dot.pulse { animation: pulse 1.4s ease-in-out infinite; }
-  #liveOut { max-height: 400px; overflow-y: auto; background: var(--panel2); border: 1px solid var(--line);
-             border-radius: 6px; padding: 10px 12px; margin: 0; white-space: pre-wrap; word-break: break-word;
-             font-size: 12px; line-height: 1.45; color: var(--text); }
-  /* interactive terminal input row */
-  .terminput { display: flex; gap: 6px; margin-top: 8px; align-items: stretch; }
-  .terminput textarea { flex: 1; resize: none; height: 34px; background: var(--bg); color: var(--text);
-             border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; font: inherit; font-size: 12px; }
-  .terminput textarea:focus { outline: none; border-color: var(--green); }
-  .terminput button, #tplSelect { padding: 0 12px; background: #14231a; color: var(--green);
-             border: 1px solid var(--green); border-radius: 5px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
-  .terminput button:hover { background: var(--green); color: var(--bg); }
-  .terminput button:disabled { opacity: .5; cursor: default; }
-  #clearBtn { color: var(--orange); border-color: var(--orange); background: #231a14; }
-  #clearBtn:hover { background: var(--orange); color: var(--bg); }
-  #tplSelect { background: var(--bg); color: var(--text); border-color: var(--line); font-weight: 400; }
-  /* history charts: pure CSS bar rows */
-  .chartrow { display: grid; grid-template-columns: 40px 1fr 88px; gap: 8px; align-items: center; margin-bottom: 4px; font-size: 11.5px; }
-  .chartrow .lbl { color: var(--dim); }
-  .chartrow .track { background: var(--panel2); border-radius: 3px; height: 14px; overflow: hidden; border: 1px solid var(--line); position: relative; }
-  .chartrow .track > i { display: block; height: 100%; }
-  .chartrow .track > i.spend { background: var(--green); }
-  .chartrow .track > i.total { background: var(--blue); }
-  .chartrow .track > i.fail { background: var(--red); position: absolute; top: 0; left: 0; }
-  .chartrow .val { text-align: right; color: var(--text); }
-  /* template modal */
-  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; place-items: center; z-index: 50; }
-  #modal.show { display: grid; }
-  #modal .box { background: var(--panel); border: 1px solid var(--green); border-radius: 8px; width: min(680px, 92vw);
-             max-height: 86vh; display: flex; flex-direction: column; padding: 16px; gap: 10px; }
-  #modal h3 { margin: 0; color: var(--gold); font-size: 14px; }
-  #modal textarea { flex: 1; min-height: 320px; resize: vertical; background: var(--bg); color: var(--text);
-             border: 1px solid var(--line); border-radius: 5px; padding: 10px; font: inherit; font-size: 12px; }
-  #modal .actions { display: flex; gap: 8px; justify-content: flex-end; }
-  #modal .actions button { padding: 6px 14px; border-radius: 5px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
-             background: #14231a; color: var(--green); border: 1px solid var(--green); }
-  #modal .actions button.cancel { background: transparent; color: var(--dim); border-color: var(--line); }
-  #modal .actions button:hover { background: var(--green); color: var(--bg); }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#08100c">
+  <title>The Rock — AdVanced OS Mission Control</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%2314261a' stroke='%23b5985c' d='M32 3 57 14l-5 34-20 13L12 48 7 14Z'/%3E%3Cpath stroke='%23dcc17e' stroke-width='5' d='M32 14v33M23 26h18'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: dark;
+      --void: #040605;
+      --ink: #080c09;
+      --panel: rgba(10, 16, 12, .94);
+      --panel-raised: rgba(17, 27, 20, .96);
+      --forest: #14261a;
+      --forest-bright: #254b32;
+      --bone: #d5cbb5;
+      --bone-soft: #aaa28f;
+      --ash: #777b72;
+      --brass: #b5985c;
+      --brass-bright: #dcc17e;
+      --blood: #a5322c;
+      --blood-bright: #d45d4e;
+      --sanctified: #79a783;
+      --warning: #d39a49;
+      --line: rgba(190, 166, 112, .20);
+      --line-strong: rgba(190, 166, 112, .38);
+      --shadow: 0 24px 80px rgba(0, 0, 0, .44);
+      --serif: Georgia, "Times New Roman", serif;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--void);
+      color: var(--bone);
+      font: 13px/1.5 var(--sans);
+      min-height: 100vh;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      background:
+        linear-gradient(180deg, rgba(2, 5, 3, .18), rgba(2, 4, 3, .58) 58%, rgba(4, 6, 5, .82)),
+        url('/assets/the-rock-command-sanctum.webp') center top / cover no-repeat;
+      opacity: .78;
+      filter: saturate(1.15) contrast(1.05) brightness(1.1);
+    }
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background-image: linear-gradient(rgba(213, 203, 181, .018) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(213, 203, 181, .014) 1px, transparent 1px);
+      background-size: 4px 4px;
+      mix-blend-mode: screen;
+    }
+    button, input, textarea, select { font: inherit; }
+    button { color: inherit; }
+    a { color: var(--brass-bright); }
+    :focus-visible { outline: 2px solid var(--brass-bright); outline-offset: 2px; }
+
+    .shell { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: 100vh; }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 24px 18px 18px;
+      background: linear-gradient(180deg, rgba(7, 14, 9, .99), rgba(4, 7, 5, .98));
+      border-right: 1px solid var(--line);
+      box-shadow: 14px 0 50px rgba(0, 0, 0, .28);
+      z-index: 20;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 23px; border-bottom: 1px solid var(--line); }
+    .brand-mark {
+      width: 45px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      color: var(--brass-bright);
+      font: 33px/1 var(--serif);
+      border: 1px solid var(--line-strong);
+      clip-path: polygon(50% 0, 96% 18%, 88% 78%, 50% 100%, 12% 78%, 4% 18%);
+      background: linear-gradient(180deg, #203726, #0a110d);
+      text-shadow: 0 0 18px rgba(220, 193, 126, .4);
+    }
+    .brand strong { display: block; font: 700 19px/1 var(--serif); letter-spacing: .12em; text-transform: uppercase; }
+    .brand small { display: block; margin-top: 6px; color: var(--ash); font: 9px/1.2 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+    .nav-label { margin: 25px 10px 8px; color: #68695e; font: 9px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase; }
+    .nav { display: grid; gap: 5px; }
+    .nav a {
+      display: flex;
+      gap: 11px;
+      align-items: center;
+      padding: 10px 12px;
+      color: var(--bone-soft);
+      text-decoration: none;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      transition: .2s ease;
+    }
+    .nav a:hover, .nav a.active { color: var(--bone); border-color: var(--line); background: linear-gradient(90deg, rgba(42, 78, 51, .55), rgba(21, 39, 27, .16)); }
+    .nav a.active::after { content: ""; width: 3px; height: 20px; margin-left: auto; background: var(--blood); box-shadow: 0 0 10px rgba(165, 50, 44, .5); }
+    .nav .glyph { width: 19px; color: var(--brass); text-align: center; font-family: var(--serif); font-size: 16px; }
+    .nav-copy strong { display: block; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+    .nav-copy small { color: #6f756c; font: 9px var(--mono); }
+    .sidebar-foot { margin-top: auto; padding: 15px 10px 0; border-top: 1px solid var(--line); }
+    .watch-status { display: flex; align-items: center; gap: 9px; color: var(--bone-soft); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+    .signal { width: 7px; height: 7px; border-radius: 50%; background: var(--ash); box-shadow: 0 0 10px currentColor; }
+    .signal.good { color: var(--sanctified); background: var(--sanctified); }
+    .signal.warn { color: var(--warning); background: var(--warning); }
+    .signal.bad { color: var(--blood-bright); background: var(--blood-bright); animation: throb 1.3s infinite; }
+    .sidebar-foot p { margin: 9px 0 0; color: #62685f; font: 9px/1.5 var(--mono); }
+
+    .main { min-width: 0; }
+    .topbar {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 28px;
+      position: sticky;
+      top: 0;
+      z-index: 15;
+      background: rgba(5, 9, 7, .9);
+      backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--line);
+    }
+    .breadcrumb { min-width: 0; }
+    .eyebrow { color: var(--brass); font: 9px/1.2 var(--mono); letter-spacing: .18em; text-transform: uppercase; }
+    .breadcrumb h1 { margin: 5px 0 0; font: 600 17px/1 var(--serif); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .top-actions { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+    .demo-ribbon { display: none; color: var(--warning); border: 1px solid rgba(211,154,73,.35); background: rgba(80, 48, 16, .28); padding: 7px 10px; font: 9px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .demo-ribbon.show { display: block; }
+    .btn {
+      border: 1px solid var(--line-strong);
+      border-radius: 2px;
+      padding: 9px 13px;
+      min-height: 36px;
+      background: linear-gradient(180deg, rgba(35, 55, 41, .9), rgba(15, 25, 18, .94));
+      color: var(--bone);
+      cursor: pointer;
+      font: 700 10px/1 var(--sans);
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      transition: .18s ease;
+    }
+    .btn:hover:not(:disabled) { border-color: var(--brass); color: #fff4d8; transform: translateY(-1px); box-shadow: 0 8px 22px rgba(0,0,0,.3); }
+    .btn:disabled { opacity: .42; cursor: not-allowed; }
+    .btn.primary { background: linear-gradient(180deg, #355c3d, #1c3825); border-color: #55765b; }
+    .btn.danger { background: linear-gradient(180deg, #69231f, #351211); border-color: #87332d; color: #f0c4b8; }
+    .btn.danger.engaged { animation: throb 1.5s infinite; }
+    .btn.ghost { background: rgba(7, 12, 9, .55); }
+    .btn.small { min-height: 28px; padding: 7px 9px; font-size: 9px; }
+
+    .content { width: min(1700px, 100%); padding: 24px 28px 46px; }
+    .sanctum {
+      min-height: 220px;
+      display: grid;
+      grid-template-columns: minmax(300px, .95fr) minmax(460px, 1.2fr);
+      align-items: end;
+      gap: 28px;
+      padding: 30px;
+      margin-bottom: 18px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      background:
+        linear-gradient(90deg, rgba(4, 9, 6, .88) 0%, rgba(4, 9, 6, .58) 34%, rgba(4, 8, 6, .12) 66%, rgba(4, 8, 6, .05)),
+        linear-gradient(0deg, rgba(4, 9, 6, .52), transparent 72%),
+        url('/assets/the-rock-command-sanctum.webp') center 58% / cover no-repeat;
+      box-shadow: var(--shadow);
+    }
+    .sanctum::before, .panel::before, dialog::before {
+      content: "";
+      position: absolute;
+      inset: 7px;
+      pointer-events: none;
+      border: 1px solid rgba(190, 166, 112, .08);
+      clip-path: polygon(0 0, 60px 0, 60px 1px, calc(100% - 60px) 1px, calc(100% - 60px) 0, 100% 0, 100% 100%, calc(100% - 60px) 100%, calc(100% - 60px) calc(100% - 1px), 60px calc(100% - 1px), 60px 100%, 0 100%);
+    }
+    .sanctum-copy { position: relative; z-index: 1; }
+    .sanctum-copy h2 { margin: 9px 0 10px; max-width: 650px; color: #e1d5bd; font: 600 clamp(28px, 4vw, 54px)/.94 var(--serif); text-transform: uppercase; letter-spacing: .025em; }
+    .sanctum-copy p { margin: 0; max-width: 610px; color: var(--bone-soft); font-size: 12px; }
+    .stats { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .stat { min-width: 0; padding: 13px 14px; background: rgba(5, 10, 7, .78); border: 1px solid var(--line); backdrop-filter: blur(10px); }
+    .stat .label { color: var(--ash); font: 8px/1.25 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    .stat strong { display: block; margin-top: 9px; color: var(--bone); font: 600 25px/1 var(--serif); }
+    .stat small { display: block; margin-top: 7px; color: #697168; font: 9px var(--mono); }
+
+    .priority-grid { display: grid; grid-template-columns: minmax(0, 1.14fr) minmax(400px, .86fr); gap: 18px; align-items: start; }
+    .panel {
+      position: relative;
+      min-width: 0;
+      background: linear-gradient(155deg, var(--panel-raised), var(--panel));
+      border: 1px solid var(--line);
+      box-shadow: 0 18px 50px rgba(0,0,0,.22);
+    }
+    .panel-header { min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+    .panel-sigil { color: var(--brass); font: 21px/1 var(--serif); }
+    .panel-title { min-width: 0; }
+    .panel-title h2 { margin: 0; color: var(--bone); font: 600 15px/1.15 var(--serif); text-transform: uppercase; letter-spacing: .08em; }
+    .panel-title p { margin: 5px 0 0; color: #71766d; font: 9px var(--mono); letter-spacing: .05em; }
+    .panel-actions { margin-left: auto; display: flex; gap: 7px; align-items: center; }
+    .panel-body { padding: 14px 16px 16px; }
+    .count { display: inline-grid; place-items: center; min-width: 25px; height: 23px; padding: 0 7px; color: var(--brass-bright); background: rgba(181,152,92,.09); border: 1px solid var(--line); font: 10px var(--mono); }
+
+    .orders { display: grid; gap: 8px; min-height: 286px; max-height: 495px; overflow: auto; padding-right: 3px; }
+    .order {
+      position: relative;
+      display: grid;
+      grid-template-columns: 4px minmax(0, 1fr) auto;
+      gap: 13px;
+      padding: 13px 13px 13px 0;
+      background: rgba(4, 9, 6, .58);
+      border: 1px solid rgba(190,166,112,.13);
+    }
+    .order-rail { background: var(--forest-bright); box-shadow: 0 0 11px rgba(51,99,66,.24); }
+    .order.high .order-rail { background: var(--warning); }
+    .order.critical .order-rail { background: var(--blood-bright); }
+    .order-main { min-width: 0; }
+    .order-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .order h3 { margin: 0; overflow: hidden; color: #ddd2bc; font: 600 12px/1.3 var(--sans); white-space: nowrap; text-overflow: ellipsis; }
+    .tag { flex: none; padding: 3px 6px; color: var(--bone-soft); background: rgba(38, 64, 45, .42); border: 1px solid rgba(121,167,131,.18); font: 8px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; }
+    .tag.claude { color: #c4b6e1; border-color: rgba(182,162,217,.28); background: rgba(79,63,104,.22); }
+    .tag.codex { color: #a9d4b2; border-color: rgba(155,197,164,.27); }
+    .tag.hermes { color: #d5b979; border-color: rgba(201,164,95,.3); background: rgba(94,70,29,.22); }
+    .order p { margin: 7px 0 0; color: #80877e; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .order-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 10px; color: #686e66; font: 9px var(--mono); }
+    .order-meta b { color: var(--bone-soft); font-weight: 500; }
+    .order-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+    .status-pill { padding: 4px 7px; font: 8px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; border: 1px solid var(--line); color: var(--ash); }
+    .status-pill.running, .status-pill.active { color: var(--sanctified); border-color: rgba(121,167,131,.35); }
+    .status-pill.queued { color: var(--warning); border-color: rgba(211,154,73,.3); }
+    .icon-btn { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); background: transparent; color: var(--ash); cursor: pointer; }
+    .icon-btn:hover:not(:disabled) { color: var(--blood-bright); border-color: var(--blood); }
+    .icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    .live-shell { min-height: 367px; display: flex; flex-direction: column; background: rgba(2,5,3,.72); }
+    .live-toolbar { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-bottom: 1px solid rgba(190,166,112,.12); }
+    .agent-select, .filter-select, .field input, .field textarea, .field select {
+      width: 100%;
+      color: var(--bone);
+      background: #070c09;
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      padding: 9px 10px;
+    }
+    .agent-select { width: auto; min-width: 170px; margin-left: auto; padding: 7px 29px 7px 9px; font-size: 10px; }
+    .filter-select { width: auto; min-width: 125px; padding: 7px 28px 7px 9px; font-size: 9px; }
+    .live-agent { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .live-agent strong { font: 600 11px var(--sans); }
+    .live-agent small { color: #697068; font: 8px var(--mono); text-transform: uppercase; }
+    #liveOut {
+      flex: 1;
+      min-height: 252px;
+      max-height: 376px;
+      overflow: auto;
+      margin: 0;
+      padding: 16px;
+      color: #aeb8ae;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: 10.5px/1.65 var(--mono);
+      background: radial-gradient(circle at 50% 0, rgba(29,52,35,.22), transparent 47%);
+    }
+    .vox-input { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px; border-top: 1px solid rgba(190,166,112,.12); }
+    .vox-input textarea { min-height: 38px; max-height: 90px; resize: vertical; color: var(--bone); background: #070c09; border: 1px solid var(--line); padding: 9px 10px; }
+    .agent-controls { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 12px; }
+
+    .chronicle { margin-top: 18px; }
+    .event-list { display: grid; max-height: 352px; overflow: auto; }
+    .event {
+      display: grid;
+      grid-template-columns: 75px 106px 105px minmax(0, 1fr) 112px;
+      gap: 11px;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(190,166,112,.09);
+      color: #8b9289;
+      font-size: 10px;
+    }
+    .event:hover { background: rgba(28,50,34,.2); }
+    .event time, .event .cid { color: #626960; font: 8.5px var(--mono); }
+    .event .actor { color: var(--bone-soft); font-weight: 600; }
+    .event .event-kind { color: var(--brass); font: 8px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .event.fail .event-kind, .event.cancel .event-kind, .event.deny .event-kind { color: var(--blood-bright); }
+    .event.complete .event-kind, .event.approve .event-kind, .event.qa_pass .event-kind { color: var(--sanctified); }
+
+    .lower-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+    .provider-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .provider-card { padding: 13px; border: 1px solid rgba(190,166,112,.13); background: rgba(4,9,6,.5); }
+    .provider-card .provider-top { display: flex; align-items: center; gap: 8px; }
+    .provider-rune { width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid var(--line); color: var(--brass-bright); font: 18px var(--serif); }
+    .provider-card h3 { margin: 0; font: 600 11px var(--sans); }
+    .provider-card p { min-height: 44px; margin: 10px 0; color: #70776e; font-size: 9px; }
+    .provider-meta { display: flex; justify-content: space-between; gap: 7px; color: #686f66; font: 8px var(--mono); text-transform: uppercase; }
+    .approval-list { display: grid; gap: 8px; }
+    .approval { padding: 13px; border: 1px solid rgba(190,166,112,.13); background: rgba(4,9,6,.5); }
+    .approval-top { display: flex; gap: 10px; align-items: flex-start; }
+    .approval h3 { margin: 0; color: var(--bone); font-size: 11px; }
+    .approval p { margin: 6px 0 0; color: #747b72; font-size: 9px; }
+    .risk { margin-left: auto; padding: 4px 7px; color: var(--warning); border: 1px solid rgba(211,154,73,.3); font: 8px var(--mono); text-transform: uppercase; }
+    .approval-actions { display: flex; gap: 7px; margin-top: 11px; }
+
+    .empty { min-height: 150px; display: grid; place-items: center; text-align: center; color: #697068; padding: 24px; }
+    .empty .rune { display: block; margin-bottom: 9px; color: var(--brass); font: 27px var(--serif); }
+    .empty strong { display: block; color: var(--bone-soft); font: 600 12px var(--serif); text-transform: uppercase; letter-spacing: .07em; }
+    .empty small { display: block; max-width: 350px; margin-top: 7px; font-size: 9px; }
+
+    dialog {
+      width: min(780px, calc(100vw - 28px));
+      max-height: calc(100vh - 34px);
+      overflow: auto;
+      padding: 0;
+      color: var(--bone);
+      border: 1px solid var(--line-strong);
+      background: linear-gradient(150deg, #111c15, #080d0a 70%);
+      box-shadow: 0 34px 120px #000;
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, .78); backdrop-filter: blur(6px); }
+    .modal-head { display: flex; gap: 12px; align-items: center; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+    .modal-head h2 { margin: 0; font: 600 19px var(--serif); letter-spacing: .08em; text-transform: uppercase; }
+    .modal-head p { margin: 4px 0 0; color: var(--ash); font: 9px var(--mono); }
+    .modal-body { padding: 19px 22px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .field { min-width: 0; }
+    .field.wide { grid-column: 1 / -1; }
+    .field label { display: block; margin-bottom: 6px; color: var(--brass); font: 8.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .field textarea { min-height: 104px; resize: vertical; }
+    .field textarea.criteria { min-height: 82px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px 21px; }
+    .confirm-copy { color: var(--bone-soft); font-size: 12px; }
+    .confirm-copy strong { color: var(--bone); }
+
+    #toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 100;
+      max-width: 390px;
+      padding: 12px 15px;
+      color: var(--bone);
+      border: 1px solid var(--line-strong);
+      background: #101a14;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: .25s ease;
+      font-size: 10px;
+    }
+    #toast.show { opacity: 1; transform: none; }
+    #toast.error { border-color: var(--blood); color: #edb6aa; }
+
+    @keyframes throb { 50% { box-shadow: 0 0 18px rgba(212,93,78,.38); } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; } }
+    @media (max-width: 1220px) {
+      .shell { grid-template-columns: 210px minmax(0,1fr); }
+      .sanctum { grid-template-columns: 1fr; }
+      .priority-grid { grid-template-columns: 1fr; }
+      .stats { max-width: 760px; }
+    }
+    @media (max-width: 900px) {
+      .shell { display: block; }
+      .sidebar { position: static; height: auto; padding: 14px 18px; }
+      .brand { padding-bottom: 13px; }
+      .brand-mark { width: 36px; height: 40px; font-size: 24px; }
+      .nav-label, .sidebar-foot { display: none; }
+      .nav { display: flex; overflow-x: auto; margin-top: 12px; }
+      .nav a { flex: 0 0 auto; padding: 8px 10px; }
+      .nav a.active::after, .nav-copy small { display: none; }
+      .topbar { top: 0; padding: 0 18px; }
+      .content { padding: 18px; }
+      .lower-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 680px) {
+      .topbar { min-height: 64px; }
+      .breadcrumb .eyebrow, .demo-ribbon.show, #sealText { display: none; }
+      .content { padding: 12px; }
+      .sanctum { min-height: 330px; padding: 22px; }
+      .stats { grid-template-columns: 1fr 1fr; }
+      .provider-grid { grid-template-columns: 1fr; }
+      .event { grid-template-columns: 63px 83px 1fr; }
+      .event .event-kind, .event .cid { display: none; }
+      .form-grid { grid-template-columns: 1fr; }
+      .field.wide { grid-column: auto; }
+      .agent-controls .btn { flex: 1; }
+      .panel-header { padding: 13px; }
+      .panel-body { padding: 10px; }
+      .order { grid-template-columns: 4px minmax(0,1fr); }
+      .order-side { grid-column: 2; flex-direction: row; align-items: center; }
+    }
+  </style>
 </head>
 <body>
-  <div class="topbar">
-    <span id="sysdot" class="dot"></span>
-    <h1>AdVanced OS <small>— Mission Control</small></h1>
-    <span id="cbBadge" class="badge">—</span>
-    <div class="spacer"></div>
-    <!-- cost tracking disabled
-    <div class="spendbar">
-      <div id="spendLabel" class="meta" style="font-size:12px;color:var(--dim)">$0.00 / $20.00</div>
-      <div id="spendBar" class="bar"><i style="width:0%"></i></div>
-    </div>
-    -->
-  </div>
-
-  <div id="livePanel" class="panel">
-    <div class="head">
-      <span id="liveDot" class="dot"></span>
-      <h2>Live Output — <span id="liveAgentName">Belial</span></h2>
-      <select id="liveSelect" onchange="renderLive()">
-        <option value="claude-belial">Belial</option>
-        <option value="ezekiel">Ezekiel</option>
-        <option value="sammael">Sammael</option>
-        <option value="claude-obsoletebot">ObsoleteBot</option>
-        <option value="claude-remote-control">Remote Control</option>
-      </select>
-    </div>
-    <pre id="liveOut">Waiting for output…</pre>
-    <div class="terminput">
-      <textarea id="liveIn" placeholder="Type a command — Enter to send, Shift+Enter for newline"
-                onkeydown="liveKey(event)"></textarea>
-      <button id="sendBtn" onclick="sendLive()">Send</button>
-      <button id="clearBtn" onclick="clearLive()">/Clear</button>
-      <select id="tplSelect" onchange="loadTemplate(this.value)">
-        <option value="">Template ▼</option>
-      </select>
-    </div>
-  </div>
-
-  <div id="modal">
-    <div class="box">
-      <h3 id="modalTitle">Template</h3>
-      <textarea id="modalText"></textarea>
-      <div class="actions">
-        <button class="cancel" onclick="closeModal()">Cancel</button>
-        <button onclick="sendTemplate()">Send to Agent</button>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">†</div>
+        <div><strong>The Rock</strong><small>AdVanced OS · Watch Fortress</small></div>
       </div>
-    </div>
-  </div>
+      <div class="nav-label">Command Nave</div>
+      <nav class="nav" aria-label="Mission Control sections">
+        <a class="active" href="#strategium"><span class="glyph">⌾</span><span class="nav-copy"><strong>Strategium</strong><small>Command overview</small></span></a>
+        <a href="#orders"><span class="glyph">‡</span><span class="nav-copy"><strong>Orders</strong><small>Task deployment</small></span></a>
+        <a href="#vox"><span class="glyph">◉</span><span class="nav-copy"><strong>Vox Obscura</strong><small>Live agent output</small></span></a>
+        <a href="#chronicle"><span class="glyph">✥</span><span class="nav-copy"><strong>Librarius</strong><small>Event chronicle</small></span></a>
+        <a href="#inner-circle"><span class="glyph">♜</span><span class="nav-copy"><strong>Inner Circle</strong><small>Provider registry</small></span></a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="watch-status"><span id="sideSignal" class="signal"></span><span id="sideStatus">Awaiting augury</span></div>
+        <p>Serial dispatch gate · Polling every 5 seconds<br><span id="lastStamp">No sanctified snapshot</span></p>
+      </div>
+    </aside>
 
-  <div class="grid">
-    <div class="panel">
-      <h2>Agents</h2>
-      <div id="workers"><div class="muted">Loading…</div></div>
-    </div>
-
-    <div class="panel">
-      <h2>Pending Dispatches</h2>
-      <div id="pending"><div class="muted">No pending dispatches</div></div>
-    </div>
-
-    <div class="panel">
-      <h2>Development Pipelines</h2>
-      <div id="pipelines"><div class="muted">No active pipelines</div></div>
-    </div>
-
-    <div class="panel">
-      <h2>Event Feed</h2>
-      <div id="events"><div class="muted">No events yet</div></div>
-    </div>
-
-    <!-- cost tracking disabled
-    <div class="panel">
-      <h2>Cost — This Week</h2>
-      <div id="cost"><div class="muted">No cost data yet</div></div>
-    </div>
-    -->
-
-    <div class="panel">
-      <h2>Cron Jobs</h2>
-      <div id="cron"><div class="muted">Loading…</div></div>
-    </div>
-
-    <!-- cost tracking disabled
-    <div class="panel">
-      <h2>Cost Over Time (7d)</h2>
-      <div id="costHistory"><div class="muted">Loading…</div></div>
-    </div>
-    -->
-
-    <div class="panel">
-      <h2>Event Failure Rate (7d)</h2>
-      <div id="eventTrend"><div class="muted">Loading…</div></div>
-    </div>
-  </div>
-
-  <div class="foot">Polling every 5s · <span id="stamp">—</span> · <a href="/api/health">health</a></div>
-  <div id="toast"></div>
-
-<script>
-const $ = s => document.querySelector(s);
-const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const hhmm = ts => (ts && ts.length >= 16) ? ts.slice(11, 16) : "—";
-const ICON = {"Belial":"⚔️","Ezekiel":"📖","Sammael":"🦅","ObsoleteBot":"🤖","Remote Control":"📡"};
-
-let toastTimer;
-function toast(msg, isErr) {
-  const t = $("#toast");
-  t.textContent = msg;
-  t.className = "show" + (isErr ? " err" : "");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.className = "", 3000);
-}
-
-async function dispatch(btn) {
-  const ta = btn.previousElementSibling;
-  const task = ta.value.trim();
-  if (!task) { toast("Enter a task first", true); return; }
-  btn.disabled = true;
-  try {
-    const r = await fetch("/api/dispatch", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({agent: ta.dataset.agent, task, priority: "normal"}),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (r.ok) { toast("Queued → " + ta.dataset.agent); ta.value = ""; btn.classList.add("sent"); renderPending(await getJSON("/api/dispatch/pending")); }
-    else toast(j.error || "Dispatch failed", true);
-  } catch (e) { toast("Dispatch failed", true); }
-  finally { btn.disabled = false; }
-}
-
-function renderPending(reqs) {
-  const box = $("#pending");
-  if (!reqs || !reqs.length) { box.innerHTML = '<div class="muted">No pending dispatches</div>'; return; }
-  box.innerHTML = reqs.map(r => `
-    <div class="req">
-      <span class="a">${esc(r.agent)}</span>
-      <span class="t">${esc(hhmm(r.created_at))} · ${esc(r.priority)}</span>
-      <div>${esc(r.task)}</div>
-    </div>`).join("");
-}
-
-const PIPE_STAGES = [["research", "Research"], ["scaffold", "Scaffold"], ["build", "Build"]];
-const STATE_STAGE = {researching: "research", scaffolding: "scaffold", building: "build"};
-
-function elapsed(iso) {
-  if (!iso) return "";
-  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
-  if (s < 90) return Math.round(s) + "s";
-  if (s < 5400) return Math.round(s / 60) + "m";
-  return Math.round(s / 3600) + "h";
-}
-
-function renderPipelines(pipes) {
-  const box = $("#pipelines");
-  if (!pipes || !pipes.length) {
-    box.innerHTML = '<div class="muted">No active pipelines — dispatch a task to start one</div>'; return;
-  }
-  // active first, done/failed dimmed at the bottom
-  const order = p => (p.state === "done" || p.state === "failed") ? 1 : 0;
-  pipes = pipes.slice().sort((a, b) => order(a) - order(b));
-  const active = STATE_STAGE; // state -> stage key currently working
-  box.innerHTML = pipes.map(p => {
-    const cur = active[p.state];
-    const done = p.state === "done", failed = p.state === "failed";
-    const stgs = PIPE_STAGES.map(([key, label], i) => {
-      let cls = "";
-      if (p.stages?.[key]?.has_output) cls = "completed";
-      else if (key === cur) cls = failed ? "failed" : "active";
-      const arrow = i < PIPE_STAGES.length - 1 ? '<span class="arrow">→</span>' : '';
-      return `<span class="stg ${cls}"><span class="sdot"></span>${label}</span>${arrow}`;
-    }).join("");
-    const workAgent = cur ? esc(p.stages?.[cur]?.agent || "—") : "";
-    const status = done ? "done" : failed ? "failed" : `${cur} · ${workAgent}`;
-    return `
-    <div class="pipe ${done ? "done" : ""}">
-      <div class="pname">${done ? '<span class="check">✓</span>' : ''}${esc(p.name)}</div>
-      <div class="stages">${stgs}</div>
-      <div class="pmeta">${esc(status)} · ${esc(elapsed(p.created_at))}</div>
-    </div>`;
-  }).join("");
-}
-
-// Red button = a dispatch for that agent is still queued (unacknowledged).
-// Green once the consumer delivers it to tmux and clears the request file.
-function paintDispatchButtons(pending) {
-  const busy = new Set((pending || []).map(r => r.agent));
-  document.querySelectorAll(".dispatch button").forEach(btn => {
-    btn.classList.toggle("sent", busy.has(btn.previousElementSibling?.dataset.agent));
-  });
-}
-
-async function getJSON(url) {
-  try { const r = await fetch(url); return r.ok ? await r.json() : null; }
-  catch (e) { return null; }
-}
-
-function renderStatus(s) {
-  if (!s || s.error) {
-    $("#sysdot").className = "dot warn";
-    $("#cbBadge").textContent = "NO SNAPSHOT";
-    $("#cbBadge").className = "badge";
-    $("#workers").innerHTML = '<div class="muted">' + esc(s?.error || "no data") + '</div>';
-    $("#cron").innerHTML = '<div class="muted">no data</div>';
-    return;
-  }
-  const cb = s.circuit_breaker || {};
-  const tripped = cb.status === "TRIPPED";
-  $("#sysdot").className = "dot " + (tripped ? "bad" : "ok");
-  $("#cbBadge").textContent = tripped ? "TRIPPED" : "PASS";
-  $("#cbBadge").className = "badge " + (tripped ? "trip" : "pass");
-
-  /* cost tracking disabled
-  const sp = cb.spend || {};
-  const pct = Math.min(100, sp.pct || 0);
-  $("#spendLabel").textContent = `$${(sp.weekly ?? 0).toFixed(2)} / $${(sp.cap ?? 0).toFixed(2)} (${(sp.pct ?? 0).toFixed(1)}%)`;
-  const bar = $("#spendBar");
-  bar.className = "bar" + (pct >= 100 ? " over" : pct >= 75 ? " hot" : "");
-  bar.firstElementChild.style.width = pct + "%";
-  */
-
-  const ws = s.workers || [];
-  // Don't clobber a textarea the user is typing in on the 5s poll.
-  if (!$("#workers").contains(document.activeElement))
-  $("#workers").innerHTML = ws.length ? '<div class="workers-grid">' + ws.map(w => `
-    <div class="wcard ${w.status === "active" ? "active" : ""} ${w.status === "stuck" ? "stuck" : ""}">
-      <div class="head">
-        <div class="icon">${ICON[w.name] || "🛰️"}</div>
-        <div>
-          <div class="name">${esc(w.name)}</div>
-          <div class="meta">${esc(w.model)} · ${esc(w.effort)}</div>
+    <main class="main">
+      <header class="topbar">
+        <div class="breadcrumb">
+          <div class="eyebrow">Watch Fortress / Inner Circle</div>
+          <h1>Strategium Command Throne</h1>
         </div>
-        <span class="pill ${esc(w.status)}">${esc(w.status)}</span>
+        <div class="top-actions">
+          <div id="demoRibbon" class="demo-ribbon">Simulated augury</div>
+          <button id="issueTop" class="btn primary" type="button" onclick="openOrderModal()">Issue Order</button>
+          <button id="sealBtn" class="btn danger" type="button" onclick="toggleGlobalStop()"><span aria-hidden="true">⛨</span> <span id="sealText">Seal the Rock</span></button>
+        </div>
+      </header>
+
+      <div class="content" id="strategium">
+        <section class="sanctum" aria-labelledby="sanctumTitle">
+          <div class="sanctum-copy">
+            <div class="eyebrow">The Inner Circle Is Watching</div>
+            <h2 id="sanctumTitle">No order forgotten. No failure concealed.</h2>
+            <p>Issue structured orders to Codex, Claude Code, and Hermes brethren through one circuit-breaker-protected gate. Every command is witnessed in the Librarius.</p>
+          </div>
+          <div class="stats" aria-label="System summary">
+            <div class="stat"><div class="label">Brethren Active</div><strong id="statActive">—</strong><small id="statActiveMeta">of — registered</small></div>
+            <div class="stat"><div class="label">Orders in Queue</div><strong id="statQueue">—</strong><small>serial gate · limit 1</small></div>
+            <div class="stat"><div class="label">Rites Fulfilled</div><strong id="statComplete">—</strong><small>recorded in chronicle</small></div>
+            <div class="stat"><div class="label">System Sanctity</div><strong id="statHealth">—</strong><small id="statHealthMeta">awaiting circuit state</small></div>
+          </div>
+        </section>
+
+        <div class="priority-grid">
+          <section class="panel" id="orders">
+            <div class="panel-header">
+              <span class="panel-sigil" aria-hidden="true">‡</span>
+              <div class="panel-title"><h2>Orders of the Watch</h2><p>Task queue · highest precedence first</p></div>
+              <div class="panel-actions"><span id="orderCount" class="count">0</span><button class="btn small primary" type="button" onclick="openOrderModal()">New Order</button></div>
+            </div>
+            <div class="panel-body"><div id="orderList" class="orders" aria-live="polite"></div></div>
+          </section>
+
+          <section class="panel" id="vox">
+            <div class="panel-header">
+              <span class="panel-sigil" aria-hidden="true">◉</span>
+              <div class="panel-title"><h2>Vox Obscura</h2><p>Live communion · follow-up channel</p></div>
+              <div class="panel-actions"><span id="liveSignal" class="signal"></span></div>
+            </div>
+            <div class="live-shell">
+              <div class="live-toolbar">
+                <div class="live-agent"><span id="liveProviderTag" class="tag">—</span><div><strong id="liveName">No agent</strong><small id="liveRole">Awaiting registry</small></div></div>
+                <select id="agentSelect" class="agent-select" aria-label="Select agent" onchange="selectAgent(this.value)"></select>
+              </div>
+              <pre id="liveOut">Awaiting the machine spirit…</pre>
+              <div class="vox-input"><textarea id="voxInput" aria-label="Follow-up instruction" placeholder="Transmit a follow-up instruction…" onkeydown="voxKey(event)"></textarea><button id="sendVox" class="btn primary" type="button" onclick="sendFollowUp()">Transmit</button></div>
+              <div class="agent-controls">
+                <button id="pauseAgent" class="btn small ghost" type="button" onclick="togglePause()">Hold Orders</button>
+                <button class="btn small ghost" type="button" onclick="confirmAgentAction('interrupt')">Interrupt</button>
+                <button class="btn small ghost" type="button" onclick="confirmAgentAction('restart')">Awaken</button>
+                <button class="btn small ghost" type="button" onclick="clearLive()">Clear Vox</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel chronicle" id="chronicle">
+          <div class="panel-header">
+            <span class="panel-sigil" aria-hidden="true">✥</span>
+            <div class="panel-title"><h2>Librarius Chronicle</h2><p>Immutable event witness · correlation-bound</p></div>
+            <div class="panel-actions">
+              <select id="eventFilter" class="filter-select" aria-label="Filter events" onchange="renderEvents()"><option value="all">All rites</option><option value="dispatch">Dispatch</option><option value="complete">Complete</option><option value="fail">Failure</option><option value="control">Control</option></select>
+            </div>
+          </div>
+          <div id="eventList" class="event-list" aria-live="polite"></div>
+        </section>
+
+        <div class="lower-grid">
+          <section class="panel" id="inner-circle">
+            <div class="panel-header"><span class="panel-sigil" aria-hidden="true">♜</span><div class="panel-title"><h2>Inner Circle Registry</h2><p>Provider adapters · local tmux transport</p></div></div>
+            <div class="panel-body"><div id="providerGrid" class="provider-grid"></div></div>
+          </section>
+          <section class="panel" id="deployment-rites">
+            <div class="panel-header"><span class="panel-sigil" aria-hidden="true">⛨</span><div class="panel-title"><h2>Rites of Deployment</h2><p>Human sanction required · never autonomous</p></div><div class="panel-actions"><span id="approvalCount" class="count">0</span></div></div>
+            <div class="panel-body"><div id="approvalList" class="approval-list"></div></div>
+          </section>
+        </div>
       </div>
-      <div class="meta">${esc(w.project)} · ${esc(w.session)}</div>
-      <div class="dispatch">
-        <textarea placeholder="Dispatch a task to ${esc(w.name)}…" data-agent="${esc(w.session)}"></textarea>
-        <button onclick="dispatch(this)">Dispatch</button>
+    </main>
+  </div>
+
+  <dialog id="orderModal">
+    <form id="orderForm" method="dialog" onsubmit="submitOrder(event)">
+      <div class="modal-head"><span class="panel-sigil">‡</span><div><h2>Issue an Order</h2><p>Structured deployment through the Rock serial gate</p></div></div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field"><label for="orderAgent">Agent of the Inner Circle</label><select id="orderAgent" required></select></div>
+          <div class="field"><label for="orderTitle">Order title</label><input id="orderTitle" required maxlength="120" placeholder="Reinforce the dispatch ward"></div>
+          <div class="field"><label for="orderRepository">Repository</label><input id="orderRepository" placeholder="owner/repository or local path"></div>
+          <div class="field"><label for="orderBranch">Requested branch</label><input id="orderBranch" placeholder="agent/order-name"></div>
+          <div class="field"><label for="orderPriority">Precedence</label><select id="orderPriority"><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option><option value="low">Low</option></select></div>
+          <div class="field"><label for="orderModel">Model override</label><input id="orderModel" placeholder="Provider default"></div>
+          <div class="field wide"><label for="orderPrompt">Command intent</label><textarea id="orderPrompt" required placeholder="Describe the work, relevant context, constraints, and expected delivery…"></textarea></div>
+          <div class="field wide"><label for="orderCriteria">Acceptance criteria · one per line</label><textarea id="orderCriteria" class="criteria" placeholder="Tests pass&#10;No unrelated files change&#10;Open a draft pull request"></textarea></div>
+          <div class="field wide"><label for="orderApproval">Deployment sanction</label><select id="orderApproval"><option value="confirm_deploy">Require explicit approval before deployment</option><option value="confirm_merge">Require approval before merge and deployment</option><option value="no_deploy">Task may not deploy</option></select></div>
+        </div>
       </div>
-    </div>`).join("") + '</div>' : '<div class="muted">No agents detected</div>';
+      <div class="modal-actions"><button class="btn ghost" type="button" onclick="closeOrderModal()">Withdraw</button><button id="submitOrder" class="btn primary" type="submit">Seal & Queue Order</button></div>
+    </form>
+  </dialog>
 
-  $("#cron").innerHTML = `<table>
-    <tr><th>Job</th><th>Schedule</th><th>Last run</th><th>Status</th></tr>
-    ${(s.cron_jobs || []).map(c => `<tr>
-      <td>${esc(c.name)}</td><td>${esc(c.schedule)}</td>
-      <td>${esc(hhmm(c.last_run))}</td>
-      <td><span class="st ${c.last_status === "ok" ? "ok" : "fail"}">${esc(c.last_status)}</span></td>
-    </tr>`).join("")}
-  </table>`;
+  <dialog id="confirmModal">
+    <div class="modal-head"><span class="panel-sigil">⛨</span><div><h2 id="confirmTitle">Confirm rite</h2><p>Operator sanction required</p></div></div>
+    <div class="modal-body"><p id="confirmCopy" class="confirm-copy"></p></div>
+    <div class="modal-actions"><button class="btn ghost" type="button" onclick="closeConfirm(false)">Abstain</button><button id="confirmAccept" class="btn danger" type="button" onclick="closeConfirm(true)">Sanction</button></div>
+  </dialog>
 
-  $("#stamp").textContent = "snapshot " + esc(hhmm(s.generated_at));
-}
+  <div id="toast" role="status" aria-live="polite"></div>
 
-function renderEvents(evs) {
-  const box = $("#events");
-  if (!evs || !evs.length) { box.innerHTML = '<div class="muted">No events yet</div>'; return; }
-  box.innerHTML = evs.map(e => `
-    <div class="ev ${esc(e.event)}">
-      <span class="t">${esc(hhmm(e.ts))}</span>
-      <span class="a">${esc(e.agent)}</span>
-      <span>${esc(e.detail) || '<span class="muted">' + esc(e.event) + '</span>'}</span>
-    </div>`).join("");
-  box.scrollTop = box.scrollHeight;
-}
+  <script>
+    const $ = selector => document.querySelector(selector);
+    const esc = value => String(value ?? "").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
+    const nowISO = () => new Date().toISOString();
+    const ago = timestamp => {
+      if (!timestamp) return "unknown";
+      const seconds = Math.max(0, (Date.now() - Date.parse(timestamp)) / 1000);
+      if (seconds < 60) return `${Math.round(seconds)}s ago`;
+      if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+      if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+      return `${Math.round(seconds / 86400)}d ago`;
+    };
+    const hhmmss = timestamp => timestamp ? new Date(timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : "—";
+    const providerRune = type => ({claude:'C', codex:'X', hermes:'H'}[type] || '†');
 
-/* cost tracking disabled
-function renderCost(c) {
-  const box = $("#cost");
-  if (!c || (!c.task_count && !Object.keys(c.by_worker || {}).length)) {
-    box.innerHTML = '<div class="muted">No cost data yet</div>'; return;
-  }
-  const workers = Object.entries(c.by_worker || {})
-    .map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><b>$${v.spend.toFixed(2)}</b> <span class="muted">${v.tasks} task(s)</span></div>`)
-    .join("");
-  box.innerHTML = `
-    <div class="kv"><span>Weekly spend</span><b>$${(c.total_spend ?? 0).toFixed(2)}</b></div>
-    <div class="kv"><span>Cap</span><b>$${(c.cap ?? 0).toFixed(2)}</b></div>
-    <div class="kv"><span>Remaining</span><b>$${(c.remaining ?? 0).toFixed(2)}</b></div>
-    <div class="kv"><span>Tasks</span><b>${c.task_count ?? 0}</b></div>
-    <div style="margin-top:10px" class="meta">By worker</div>
-    ${workers || '<div class="muted">—</div>'}
-    <div style="margin-top:8px" class="muted">Trend vs last week: — (placeholder)</div>`;
-}
-*/
+    const DEMO = {
+      orders: [
+        {request_id:'demo-1', title:'Reforge the provider registry', agent_id:'azrael', agent_name:'Azrael', provider_id:'hermes', priority:'critical', repository:'AdVanced-OS', branch:'agent/provider-registry', status:'running', created_at:new Date(Date.now()-18*60000).toISOString(), task:'Create a transport-neutral registry for every sworn agent.', simulated:true},
+        {request_id:'demo-2', title:'Audit the circuit-breaker wards', agent_id:'ezekiel', agent_name:'Ezekiel', provider_id:'hermes', priority:'high', repository:'AdVanced-OS', branch:'', status:'queued', created_at:new Date(Date.now()-8*60000).toISOString(), task:'Verify that no order bypasses the global stop.', simulated:true},
+        {request_id:'demo-3', title:'Prepare the ObsoleteBot deployment rite', agent_id:'claude-obsoletebot', agent_name:'Asmodai', provider_id:'claude-code', priority:'normal', repository:'ObsoleteBot', branch:'release/next', status:'queued', created_at:new Date(Date.now()-3*60000).toISOString(), task:'Run the release checks and prepare a risk summary.', simulated:true}
+      ],
+      events: [
+        {ts:new Date(Date.now()-17*60000).toISOString(), correlation_id:'71ac9e:0', event:'dispatch', agent:'azrael', detail:'Reforge the provider registry'},
+        {ts:new Date(Date.now()-12*60000).toISOString(), correlation_id:'71ac9e:0', event:'qa_pass', agent:'azrael', detail:'Registry schema validation passed'},
+        {ts:new Date(Date.now()-8*60000).toISOString(), correlation_id:'9ed141:0', event:'queued', agent:'ezekiel', detail:'Audit the circuit-breaker wards'},
+        {ts:new Date(Date.now()-5*60000).toISOString(), correlation_id:'24bb80:0', event:'complete', agent:'claude-belial', detail:'Mission control visual reconnaissance complete'},
+        {ts:new Date(Date.now()-2*60000).toISOString(), correlation_id:'2ac514:0', event:'approve', agent:'mission-control', detail:'Deployment rite sanctioned by Kevin'}
+      ],
+      deployments: [
+        {id:'demo-deploy-482', title:'ObsoleteBot · release/next', summary:'12 checks passed · no schema change · rollback image available', risk:'medium', created_at:nowISO(), simulated:true}
+      ],
+      live: {
+        'azrael': `[01:43:07] ORDER RECEIVED · Reforge the provider registry\n[01:43:09] Inspecting dispatch boundary and status snapshot…\n[01:43:14] ✓ Registry schema loaded: 3 providers / 6 agents\n[01:43:21] ✓ Hermes orchestrator bound to the Rock serial gate\n[01:43:29] Running verification rites…\n\n▸ Working tree clean. Awaiting the next instruction.`,
+        'claude-belial': `[01:39:11] BELIAL · GRAND MASTER / BUILD\n[01:39:14] Dashboard shell rendered successfully\n[01:39:20] ✓ Queue controls connected\n[01:39:24] ✓ Vox channel established\n\n❯ Awaiting orders`,
+        'ezekiel': `[01:46:02] EZEKIEL · CHIEF LIBRARIAN\n[01:46:06] Consulting the Librarius for circuit-breaker doctrine…\n[01:46:12] No dispatch path may outrank the stop flag.\n\n❯ Research rite in progress`
+      }
+    };
 
-async function renderLive() {
-  const sel = $("#liveSelect"), dot = $("#liveDot"), pre = $("#liveOut");
-  $("#liveAgentName").textContent = sel.options[sel.selectedIndex].text;
-  const j = await getJSON(`/api/agent/session?session=${encodeURIComponent(sel.value)}&lines=20`);
-  // No live tmux session for the selected agent (e.g. it isn't running).
-  if (!j || j.error) {
-    dot.className = "dot bad";
-    pre.textContent = "Agent not online — session may be starting…";
-    return;
-  }
-  // green pulse = active, orange blink = stuck, dim = idle.
-  dot.className = "dot " + (j.status === "active" ? "pulse ok" : j.status === "stuck" ? "stuck" : "");
-  const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
-  pre.textContent = j.output || "Waiting for output…";
-  if (atBottom) pre.scrollTop = pre.scrollHeight;
-}
+    const state = {registry:{providers:[],agents:[]}, status:null, orders:[], events:[], deployments:[], selectedAgent:'', demo:false, confirm:null};
+    let toastTimer;
 
-const liveSession = () => $("#liveSelect").value;
+    function toast(message, error=false) {
+      const element = $('#toast');
+      element.textContent = message;
+      element.className = `show${error ? ' error' : ''}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => element.className = '', 3400);
+    }
 
-async function postJSON(url, body) {
-  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
-                             body: JSON.stringify(body)});
-  return {ok: r.ok, j: await r.json().catch(() => ({}))};
-}
+    async function getJSON(url) {
+      try { const response = await fetch(url); return response.ok ? await response.json() : null; }
+      catch (_) { return null; }
+    }
+    async function postJSON(url, data) {
+      const response = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+      return {ok:response.ok, status:response.status, body:await response.json().catch(() => ({}))};
+    }
+    function provider(id) { return state.registry.providers.find(item => item.id === id) || {id, name:id || 'Unknown', type:id}; }
+    function agent(id) { return state.registry.agents.find(item => id === item.id || id === item.session) || null; }
+    function currentAgent() { return agent(state.selectedAgent); }
 
-function liveKey(e) {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendLive(); }
-}
+    function renderSystem() {
+      const agents = state.registry.agents || [];
+      const active = agents.filter(a => ['active','idle','stuck','paused'].includes(a.status)).length;
+      const events = state.events.length ? state.events : (state.demo ? DEMO.events : []);
+      const complete = events.filter(e => ['complete','qa_pass','approve','deploy'].includes(e.event)).length;
+      const cb = state.status?.circuit_breaker || {};
+      const stopped = cb.global_stop || cb.status === 'TRIPPED';
+      $('#statActive').textContent = active;
+      $('#statActiveMeta').textContent = `of ${agents.length} registered`;
+      $('#statQueue').textContent = state.orders.length || (state.demo ? DEMO.orders.length : 0);
+      $('#statComplete').textContent = complete;
+      $('#statHealth').textContent = stopped ? 'SEALED' : state.status?.error ? 'DEGRADED' : 'PURE';
+      $('#statHealthMeta').textContent = stopped ? 'global stop engaged' : 'circuit wards holding';
+      $('#sideSignal').className = `signal ${stopped ? 'bad' : state.status ? 'good' : 'warn'}`;
+      $('#sideStatus').textContent = stopped ? 'The Rock is sealed' : state.status ? 'Wards operational' : 'Simulated augury';
+      $('#sealBtn').classList.toggle('engaged', stopped);
+      $('#sealText').textContent = stopped ? 'Unseal the Rock' : 'Seal the Rock';
+      $('#lastStamp').textContent = state.status?.generated_at ? `Snapshot ${hhmmss(state.status.generated_at)}` : 'No live sanctified snapshot';
+      $('#demoRibbon').classList.toggle('show', state.demo);
+    }
 
-async function sendLive() {
-  const ta = $("#liveIn"), btn = $("#sendBtn");
-  const input = ta.value;
-  if (!input.trim()) { toast("Type something first", true); return; }
-  btn.disabled = true;
-  try {
-    const {ok, j} = await postJSON("/api/agent/send", {session: liveSession(), input, submit: true});
-    if (ok) { ta.value = ""; toast("Sent → " + liveSession()); renderLive(); }
-    else toast(j.error || "Send failed", true);
-  } catch (e) { toast("Send failed", true); }
-  finally { btn.disabled = false; }
-}
+    function renderOrders() {
+      const list = state.orders.length ? state.orders : (state.demo ? DEMO.orders : []);
+      $('#orderCount').textContent = list.length;
+      $('#orderList').innerHTML = list.length ? list.map(order => {
+        const p = provider(order.provider_id);
+        const status = order.status || 'queued';
+        const copy = String(order.task || '').replace(/^# .*?\n+/, '').slice(0, 160);
+        return `<article class="order ${esc(order.priority)}">
+          <span class="order-rail"></span>
+          <div class="order-main">
+            <div class="order-top"><span class="tag ${esc(p.type)}">${esc(p.name)}</span><h3>${esc(order.title || 'Untitled order')}</h3></div>
+            <p>${esc(copy || 'Sealed task document')}</p>
+            <div class="order-meta"><span>Assigned <b>${esc(order.agent_name || agent(order.agent_id || order.agent)?.name || order.agent)}</b></span><span>${esc(order.repository || 'No repository')}</span><span>${ago(order.created_at)}</span></div>
+          </div>
+          <div class="order-side"><span class="status-pill ${esc(status)}">${esc(status)}</span><button class="icon-btn" title="Cancel queued order" ${order.simulated ? 'disabled' : ''} onclick="cancelOrder('${esc(order.request_id)}')">×</button></div>
+        </article>`;
+      }).join('') : `<div class="empty"><div><span class="rune">‡</span><strong>No orders await judgment</strong><small>Issue a structured order to place work behind the serial gate.</small></div></div>`;
+    }
 
-async function clearLive() {
-  const btn = $("#clearBtn");
-  btn.disabled = true;
-  try {
-    const {ok, j} = await postJSON("/api/agent/clear", {session: liveSession()});
-    toast(ok ? "Cleared → " + liveSession() : (j.error || "Clear failed"), !ok);
-    if (ok) renderLive();
-  } catch (e) { toast("Clear failed", true); }
-  finally { btn.disabled = false; }
-}
+    function renderAgentOptions() {
+      const agents = state.registry.agents || [];
+      if (!state.selectedAgent || !agent(state.selectedAgent)) state.selectedAgent = agents[0]?.id || '';
+      const options = agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} · ${esc(provider(a.provider_id).name)}</option>`).join('');
+      $('#agentSelect').innerHTML = options;
+      $('#orderAgent').innerHTML = options;
+      $('#agentSelect').value = state.selectedAgent;
+      if (state.selectedAgent) $('#orderAgent').value = state.selectedAgent;
+      renderLiveIdentity();
+    }
 
-// Templates: fill the dropdown once, open a modal to edit + dispatch.
-let templates = {};
-async function loadTemplates() {
-  const list = await getJSON("/api/templates");
-  if (!list) return;
-  const sel = $("#tplSelect");
-  list.forEach(t => {
-    templates[t.name] = t;
-    const o = document.createElement("option");
-    o.value = t.name; o.textContent = t.title;
-    sel.appendChild(o);
-  });
-}
-function loadTemplate(name) {
-  const t = templates[name];
-  $("#tplSelect").value = "";
-  if (!t) return;
-  $("#modalTitle").textContent = t.title + " → " + liveSession();
-  $("#modalText").value = t.content;
-  $("#modal").classList.add("show");
-}
-function closeModal() { $("#modal").classList.remove("show"); }
-async function sendTemplate() {
-  const task = $("#modalText").value.trim();
-  if (!task) { toast("Template is empty", true); return; }
-  try {
-    const {ok, j} = await postJSON("/api/dispatch", {agent: liveSession(), task, priority: "normal"});
-    if (ok) { toast("Dispatched → " + liveSession()); closeModal(); renderPending(await getJSON("/api/dispatch/pending")); }
-    else toast(j.error || "Dispatch failed", true);
-  } catch (e) { toast("Dispatch failed", true); }
-}
+    function renderLiveIdentity() {
+      const selected = currentAgent();
+      if (!selected) return;
+      const p = provider(selected.provider_id);
+      $('#liveName').textContent = selected.name;
+      $('#liveRole').textContent = selected.role || selected.model || 'Sworn agent';
+      $('#liveProviderTag').textContent = p.name;
+      $('#liveProviderTag').className = `tag ${p.type}`;
+      $('#liveSignal').className = `signal ${selected.status === 'active' ? 'good' : selected.status === 'stuck' ? 'bad' : selected.status === 'offline' ? 'warn' : 'good'}`;
+      $('#pauseAgent').textContent = selected.paused ? 'Release Orders' : 'Hold Orders';
+    }
 
-const dayLbl = d => new Date(d + "T00:00:00Z").toLocaleDateString("en-US", {weekday: "short", timeZone: "UTC"});
+    async function renderLive() {
+      const selected = currentAgent();
+      if (!selected) { $('#liveOut').textContent = 'No agent is registered.'; return; }
+      renderLiveIdentity();
+      const result = await getJSON(`/api/agent/session?session=${encodeURIComponent(selected.session || selected.id)}&lines=28`);
+      if (result && !result.error && result.output) {
+        $('#liveOut').textContent = result.output;
+        $('#liveSignal').className = `signal ${result.status === 'active' ? 'good' : result.status === 'stuck' ? 'bad' : ''}`;
+      } else if (state.demo) {
+        $('#liveOut').textContent = DEMO.live[selected.id] || `[SIMULATED VOX]\n${selected.name} · ${selected.role}\nProvider: ${provider(selected.provider_id).name}\nStatus: ${selected.status || 'standby'}\n\n❯ No live session. Demonstration telemetry is active.`;
+      } else {
+        $('#liveOut').textContent = `Vox silence. Session '${selected.session || selected.id}' is not online.`;
+      }
+    }
 
-/* cost tracking disabled
-function renderCostHistory(rows) {
-  const box = $("#costHistory");
-  if (!rows || !rows.length) { box.innerHTML = '<div class="muted">No cost data</div>'; return; }
-  const max = Math.max(0.01, ...rows.map(r => r.spend));
-  box.innerHTML = rows.map(r => `
-    <div class="chartrow">
-      <span class="lbl">${esc(dayLbl(r.date))}</span>
-      <span class="track"><i class="spend" style="width:${(r.spend / max * 100).toFixed(1)}%"></i></span>
-      <span class="val">$${r.spend.toFixed(2)}</span>
-    </div>`).join("");
-}
-*/
+    function renderEvents() {
+      let list = state.events.length ? state.events : (state.demo ? DEMO.events : []);
+      const filter = $('#eventFilter').value;
+      if (filter === 'control') list = list.filter(e => ['pause','resume','cancel','stop','start','approve','deny'].includes(e.event));
+      else if (filter !== 'all') list = list.filter(e => filter === 'fail' ? ['fail','qa_fail','deny','cancel'].includes(e.event) : e.event === filter);
+      $('#eventList').innerHTML = list.length ? list.slice().reverse().map(e => `<div class="event ${esc(e.event)}">
+        <time>${esc(hhmmss(e.ts))}</time><span class="event-kind">${esc(e.event.replaceAll('_',' '))}</span><span class="actor">${esc(agent(e.agent)?.name || e.agent)}</span><span>${esc(e.detail || 'No detail recorded')}</span><span class="cid">${esc(String(e.correlation_id || '').slice(0, 14))}</span>
+      </div>`).join('') : `<div class="empty"><div><span class="rune">✥</span><strong>The chronicle is silent</strong><small>Agent and operator rites will appear here as structured events.</small></div></div>`;
+    }
 
-function renderEventTrend(rows) {
-  const box = $("#eventTrend");
-  if (!rows || !rows.length) { box.innerHTML = '<div class="muted">No events</div>'; return; }
-  const max = Math.max(1, ...rows.map(r => r.total));
-  box.innerHTML = rows.map(r => `
-    <div class="chartrow">
-      <span class="lbl">${esc(dayLbl(r.date))}</span>
-      <span class="track">
-        <i class="total" style="width:${(r.total / max * 100).toFixed(1)}%"></i>
-        <i class="fail" style="width:${(r.failed / max * 100).toFixed(1)}%"></i>
-      </span>
-      <span class="val">${r.failed}/${r.total}</span>
-    </div>`).join("");
-}
+    function renderProviders() {
+      const providers = state.registry.providers || [];
+      $('#providerGrid').innerHTML = providers.length ? providers.map(p => `<article class="provider-card">
+        <div class="provider-top"><span class="provider-rune">${providerRune(p.type)}</span><div><h3>${esc(p.name)}</h3><span class="status-pill ${p.counts?.online ? 'active' : ''}">${p.counts?.online || 0}/${p.counts?.total || 0} online</span></div></div>
+        <p>${esc(p.description || 'Provider adapter registered with the Inner Circle.')}</p>
+        <div class="provider-meta"><span>${esc((p.transport || 'unknown').replaceAll('_',' '))}</span><span>${p.counts?.active || 0} active</span></div>
+      </article>`).join('') : `<div class="empty"><div><span class="rune">♜</span><strong>No providers sworn</strong><small>Add providers to config/providers.json.</small></div></div>`;
+    }
 
-async function tick() {
-  renderLive();
-  const [s, e, p, et, pl] = await Promise.all([
-    getJSON("/api/status"),
-    getJSON("/api/events?limit=50"),
-    getJSON("/api/dispatch/pending"),
-    getJSON("/api/events/trend?period=7d"),
-    getJSON("/api/pipelines"),
-  ]);
-  renderStatus(s);
-  renderEvents(e);
-  renderPending(p);
-  paintDispatchButtons(p);
-  renderEventTrend(et);
-  renderPipelines(pl);
-}
+    function renderDeployments() {
+      const list = state.deployments.length ? state.deployments : (state.demo ? DEMO.deployments : []);
+      $('#approvalCount').textContent = list.length;
+      $('#approvalList').innerHTML = list.length ? list.map(item => `<article class="approval">
+        <div class="approval-top"><div><h3>${esc(item.title || item.id || 'Deployment rite')}</h3><p>${esc(item.summary || 'Awaiting operator risk review.')}</p></div><span class="risk">${esc(item.risk || 'review')} risk</span></div>
+        <div class="approval-actions"><button class="btn small primary" ${item.simulated ? 'disabled' : ''} onclick="decideDeployment('${esc(item.id || item.deployment_id)}','approve')">Sanction</button><button class="btn small danger" ${item.simulated ? 'disabled' : ''} onclick="decideDeployment('${esc(item.id || item.deployment_id)}','deny')">Deny</button>${item.simulated ? '<span class="tag">demonstration</span>' : ''}</div>
+      </article>`).join('') : `<div class="empty"><div><span class="rune">⛨</span><strong>No rite awaits sanction</strong><small>Deployments remain inert until an explicit human decision is recorded.</small></div></div>`;
+    }
 
-loadTemplates();
-tick();
-setInterval(tick, 5000);
-</script>
+    function renderAll() { renderSystem(); renderOrders(); renderAgentOptions(); renderEvents(); renderProviders(); renderDeployments(); renderLive(); }
+
+    async function refresh() {
+      const [registry, status, orders, events, deployments] = await Promise.all([
+        getJSON('/api/providers'), getJSON('/api/status'), getJSON('/api/dispatch/pending'), getJSON('/api/events?limit=80'), getJSON('/api/deployments')
+      ]);
+      if (registry) state.registry = registry;
+      state.status = status && !status.error ? status : null;
+      state.orders = Array.isArray(orders) ? orders : [];
+      state.events = Array.isArray(events) ? events : [];
+      state.deployments = Array.isArray(deployments) ? deployments : [];
+      state.demo = !registry || registry.demo_recommended || (!state.status && !state.orders.length && !state.events.length);
+      renderAll();
+    }
+
+    function openOrderModal() {
+      renderAgentOptions();
+      $('#orderForm').reset();
+      if (state.selectedAgent) $('#orderAgent').value = state.selectedAgent;
+      $('#orderModal').showModal();
+      setTimeout(() => $('#orderTitle').focus(), 30);
+    }
+    function closeOrderModal() { $('#orderModal').close(); }
+    async function submitOrder(event) {
+      event.preventDefault();
+      const button = $('#submitOrder');
+      button.disabled = true;
+      const payload = {
+        agent:$('#orderAgent').value, title:$('#orderTitle').value.trim(), repository:$('#orderRepository').value.trim(), branch:$('#orderBranch').value.trim(),
+        priority:$('#orderPriority').value, model:$('#orderModel').value.trim(), prompt:$('#orderPrompt').value.trim(), approval_policy:$('#orderApproval').value,
+        acceptance_criteria:$('#orderCriteria').value.split('\n').map(v => v.trim()).filter(Boolean)
+      };
+      try {
+        const result = await postJSON('/api/dispatch', payload);
+        if (!result.ok) throw new Error(result.body.error || 'Order rejected');
+        closeOrderModal(); toast(`Order sealed for ${agent(payload.agent)?.name || payload.agent}`); await refresh();
+      } catch (error) { toast(error.message || 'Order failed', true); }
+      finally { button.disabled = false; }
+    }
+
+    async function cancelOrder(requestId) {
+      const ok = await ask('Cancel queued order?', 'The sealed order will be removed before it reaches an agent.', 'Cancel Order');
+      if (!ok) return;
+      try { const result = await postJSON('/api/dispatch/cancel', {request_id:requestId}); if (!result.ok) throw new Error(result.body.error || 'Cancellation failed'); toast('Order withdrawn from the gate'); await refresh(); }
+      catch (error) { toast(error.message, true); }
+    }
+
+    function selectAgent(id) { state.selectedAgent = id; renderLive(); }
+    function voxKey(event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendFollowUp(); } }
+    async function sendFollowUp() {
+      const selected = currentAgent(), input = $('#voxInput').value.trim();
+      if (!selected || !input) return toast('Write an instruction for the selected agent', true);
+      $('#sendVox').disabled = true;
+      try { const result = await postJSON('/api/agent/send', {session:selected.session || selected.id, input, submit:true}); if (!result.ok) throw new Error(result.body.error || 'Vox transmission failed'); $('#voxInput').value=''; toast(`Transmission sent to ${selected.name}`); setTimeout(renderLive, 800); }
+      catch (error) { toast(error.message, true); }
+      finally { $('#sendVox').disabled = false; }
+    }
+    async function clearLive() {
+      const selected = currentAgent(); if (!selected) return;
+      const ok = await ask('Clear the vox context?', `This sends /clear to ${selected.name}.`, 'Clear Vox'); if (!ok) return;
+      try { const result = await postJSON('/api/agent/clear', {session:selected.session || selected.id}); if (!result.ok) throw new Error(result.body.error || 'Clear failed'); toast(`Vox cleared for ${selected.name}`); setTimeout(renderLive, 800); }
+      catch (error) { toast(error.message, true); }
+    }
+    async function togglePause() {
+      const selected = currentAgent(); if (!selected) return;
+      const action = selected.paused ? 'resume' : 'pause';
+      try { const result = await postJSON('/api/agent/control', {agent:selected.id, action}); if (!result.ok) throw new Error(result.body.error || 'Control rite failed'); toast(`${selected.name} ${action === 'pause' ? 'will receive no new orders' : 'may receive orders again'}`); await refresh(); }
+      catch (error) { toast(error.message, true); }
+    }
+    async function confirmAgentAction(action) {
+      const selected = currentAgent(); if (!selected) return;
+      const copy = action === 'interrupt' ? `Interrupt ${selected.name}'s active task? Unsaved work may be left in its current state.` : `Awaken ${selected.name}? This only succeeds when its registered tmux session is offline.`;
+      if (!await ask(`${action === 'interrupt' ? 'Interrupt' : 'Awaken'} ${selected.name}?`, copy, action === 'interrupt' ? 'Interrupt' : 'Awaken')) return;
+      try { const result = await postJSON('/api/agent/control', {agent:selected.id, action}); if (!result.ok) throw new Error(result.body.error || 'Control rite failed'); toast(`${selected.name}: ${result.body.status}`); await refresh(); }
+      catch (error) { toast(error.message, true); }
+    }
+
+    async function toggleGlobalStop() {
+      const stopped = state.status?.circuit_breaker?.global_stop || state.status?.circuit_breaker?.status === 'TRIPPED';
+      const action = stopped ? 'release' : 'engage';
+      const ok = await ask(stopped ? 'Unseal the Rock?' : 'Seal the Rock?', stopped ? 'Release the persistent global stop and allow the serial gate to drain again.' : 'Persistently halt all new dispatches. Queued orders will remain sealed on disk.', stopped ? 'Unseal' : 'Seal');
+      if (!ok) return;
+      try { const result = await postJSON('/api/control/global-stop', {action, reason:'Operator engaged the emergency seal from Mission Control'}); if (!result.ok) throw new Error(result.body.error || 'Global stop failed'); toast(stopped ? 'The Rock is unsealed' : 'The Rock is sealed'); await refresh(); }
+      catch (error) { toast(error.message, true); }
+    }
+
+    async function decideDeployment(id, decision) {
+      const ok = await ask(`${decision === 'approve' ? 'Sanction' : 'Deny'} deployment?`, `This records an explicit ${decision} decision for deployment ${id}.`, decision === 'approve' ? 'Sanction' : 'Deny');
+      if (!ok) return;
+      try { const result = await postJSON('/api/deploy/decision', {deployment_id:id, decision}); if (!result.ok) throw new Error(result.body.error || 'Decision failed'); toast(`Deployment ${decision === 'approve' ? 'sanctioned' : 'denied'}`); await refresh(); }
+      catch (error) { toast(error.message, true); }
+    }
+
+    function ask(title, copy, accept='Sanction') {
+      return new Promise(resolve => {
+        state.confirm = resolve; $('#confirmTitle').textContent = title; $('#confirmCopy').textContent = copy; $('#confirmAccept').textContent = accept; $('#confirmModal').showModal();
+      });
+    }
+    function closeConfirm(value) { $('#confirmModal').close(); const resolve = state.confirm; state.confirm = null; if (resolve) resolve(value); }
+    $('#confirmModal').addEventListener('cancel', event => { event.preventDefault(); closeConfirm(false); });
+    $('#orderModal').addEventListener('cancel', () => $('#orderModal').close());
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
 </body>
 </html>

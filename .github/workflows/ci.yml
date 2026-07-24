@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+
+      - name: Run Python tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Compile Python
+        run: python3 -m py_compile server/serve.py tests/test_serve.py
+
+      - name: Validate provider registry
+        run: python3 -m json.tool config/providers.json >/dev/null
+
+      - name: Validate shell syntax
+        run: find scripts -type f -name '*.sh' -print0 | xargs -0 bash -n
+
+      - name: Run ShellCheck
+        run: find scripts -type f -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
+
+      - name: Validate dashboard JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          html = Path("public/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>", html, flags=re.I | re.S)
+          if len(scripts) != 1:
+              raise SystemExit(f"expected one inline script, found {len(scripts)}")
+          Path("/tmp/advanced-os-dashboard-inline.js").write_text(scripts[0], encoding="utf-8")
+          PY
+          node --check /tmp/advanced-os-dashboard-inline.js

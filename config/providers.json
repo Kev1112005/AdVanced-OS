@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "dispatch_lane": {
+    "id": "rock-serial",
+    "name": "The Rock Serial Gate",
+    "concurrency_limit": 1,
+    "description": "Durable file queue drained through the circuit-breaker-protected tmux channel."
+  },
+  "providers": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "type": "claude",
+      "transport": "local_tmux",
+      "scope": "local",
+      "status": "operational",
+      "accent": "#b6a2d9",
+      "description": "Primary coding brethren for implementation, review, and repository work."
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "type": "codex",
+      "transport": "local_tmux",
+      "scope": "local",
+      "status": "standby",
+      "accent": "#9bc5a4",
+      "description": "Codex sessions registered as independent local task executors."
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes",
+      "type": "hermes",
+      "transport": "local_tmux",
+      "scope": "local",
+      "status": "operational",
+      "accent": "#c9a45f",
+      "description": "Orchestration, research, and vanguard profiles governed by the serial gate."
+    }
+  ],
+  "agents": [
+    {
+      "id": "claude-belial",
+      "name": "Belial",
+      "provider_id": "claude-code",
+      "session": "claude-belial",
+      "role": "Grand Master · Build",
+      "model": "Claude provider default",
+      "project": "AdVanced OS",
+      "directory": "~/AdVanced-OS",
+      "restart_command": ["claude"],
+      "capabilities": ["dispatch", "follow_up", "pause", "cancel", "restart"]
+    },
+    {
+      "id": "claude-obsoletebot",
+      "name": "Asmodai",
+      "provider_id": "claude-code",
+      "session": "claude-obsoletebot",
+      "role": "Interrogator · ObsoleteBot",
+      "model": "Claude provider default",
+      "project": "ObsoleteBot",
+      "directory": "~/ObsoleteBot",
+      "restart_command": ["claude"],
+      "capabilities": ["dispatch", "follow_up", "pause", "cancel", "restart"]
+    },
+    {
+      "id": "claude-remote-control",
+      "name": "Naaman",
+      "provider_id": "claude-code",
+      "session": "claude-remote-control",
+      "role": "Scout · Remote Control",
+      "model": "Claude provider default",
+      "project": "ObsoleteBot",
+      "directory": "~/ObsoleteBot",
+      "restart_command": ["claude"],
+      "capabilities": ["dispatch", "follow_up", "pause", "cancel", "restart"]
+    },
+    {
+      "id": "azrael",
+      "name": "Azrael",
+      "provider_id": "hermes",
+      "session": "hermes",
+      "role": "Supreme Grand Master · Orchestrator",
+      "model": "DeepSeek V4 Flash",
+      "project": "AdVanced OS",
+      "directory": "~",
+      "restart_command": ["hermes", "--yolo"],
+      "capabilities": ["dispatch", "follow_up", "pause", "cancel", "restart"]
+    },
+    {
+      "id": "ezekiel",
+      "name": "Ezekiel",
+      "provider_id": "hermes",
+      "session": "ezekiel",
+      "role": "Chief Librarian · Research",
+      "model": "DeepSeek V4 Flash",
+      "project": "AdVanced OS",
+      "directory": "~",
+      "restart_command": ["hermes", "-p", "ezekiel", "--yolo"],
+      "capabilities": ["dispatch", "follow_up", "pause", "cancel", "restart"]
+    },
+    {
+      "id": "sammael",
+      "name": "Sammael",
+      "provider_id": "hermes",
+      "session": "sammael",
+      "role": "Master of the Ravenwing · Vanguard",
+      "model": "DeepSeek V4 Pro",
+      "project": "AdVanced OS",
+      "directory": "~",
+      "restart_command": ["hermes", "-p", "sammael", "--yolo"],
+      "capabilities": ["dispatch", "follow_up", "pause", "cancel", "restart"]
+    }
+  ]
+}

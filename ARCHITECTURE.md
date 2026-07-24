@@ -2,7 +2,7 @@
 
 ## Overview
 
-AdVanced OS is a four-layer architecture: **Interface → Orchestration → Dispatch → Workers**. Kevin interacts through two complementary interfaces — the Mission Control GUI (awareness) and the Discord CLI (control). The entire system is designed around one hard constraint: **a single serial tmux channel to the primary coding worker (Claude Code)**.
+AdVanced OS is a four-layer architecture: **Interface → Orchestration → Dispatch → Workers**. Kevin interacts through two complementary interfaces — the Mission Control GUI (awareness and trusted local control) and the Discord CLI (remote control). The entire system is designed around one hard constraint: **a single serial tmux channel to the primary coding worker (Claude Code)**.
 
 ## The Four Layers
 
@@ -12,10 +12,16 @@ Two complementary interfaces sit above the orchestrator. They share the same bac
 
 | Interface | Role | Technology | Use When |
 |-----------|------|------------|----------|
-| **Mission Control GUI** | Awareness — at-a-glance status of all agents, tasks, costs, and system health | Static HTML + CSS + JS, polls JSON endpoints | Sitting at a desk, want to see everything at once |
-| **Discord CLI** | Control — dispatch, approve deploys, stop, configure | Hermes Agent via Discord | On mobile, in a meeting, or when an action is faster by keyboard |
+| **Mission Control GUI** | Awareness + trusted local control — monitor agents and issue explicit operator actions | Static HTML + CSS + JS, polls JSON endpoints | Sitting at a desk, want to see and control everything at once |
+| **Discord CLI** | Complementary remote control — dispatch, approve deploys, stop, configure | Hermes Agent via Discord | On mobile, in a meeting, or when an action is faster by conversation |
 
-The GUI is the primary interface — the operating system's main display. The CLI is the control surface for actions that are faster by keyboard. They share the same data sources (event log, status snapshot, cost log) and are consistent with each other.
+The GUI is the primary interface and local control surface. It can issue structured orders, follow up with live agents, hold or interrupt work, restart configured sessions, record deployment decisions, and engage the disk-backed global stop. The CLI remains the remote control surface. Both share the same provider registry, durable order queue, event log, status snapshot, and safety state.
+
+### Provider Registry
+
+`config/providers.json` is the source of truth for provider adapters and registered agents. It records provider type, transport, tmux session, role, model label, capabilities, and optional restart command. Mission Control and the status snapshot read this same registry, eliminating hard-coded rosters.
+
+All current providers use the local tmux adapter and enter through the existing serial dispatch gate. Registering Codex, Claude Code, and Hermes does not imply concurrent Hermes RPC. Remote execution, if added, must be implemented as a new adapter behind the durable order boundary.
 
 ### Layer 1: Orchestration (Hermes)
 
