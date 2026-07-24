@@ -16,6 +16,7 @@ Endpoints:
   GET /api/health        -> {"status":"ok","uptime":<seconds>}
 """
 import csv
+import fcntl
 import json
 import mimetypes
 import os
@@ -409,7 +410,7 @@ def global_stop_control(body):
 
 
 def deployment_decision(body):
-    """Persist an operator's explicit deployment sanction or denial."""
+    """Persist one immutable, idempotent operator deployment decision."""
     try:
         data = json.loads(body or b"{}")
     except ValueError:
@@ -418,15 +419,36 @@ def deployment_decision(body):
     decision = str(data.get("decision", "")).strip()
     if not deploy_id or decision not in ("approve", "deny"):
         return 400, {"error": "deployment_id and approve/deny decision are required"}
+    os.makedirs(DEPLOY_DIR, exist_ok=True)
     os.makedirs(APPROVAL_DIR, exist_ok=True)
-    record = {"deployment_id": deploy_id, "decision": decision,
-              "reason": str(data.get("reason") or ""),
-              "decided_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "decided_by": os.environ.get("USER", "operator")}
-    with open(os.path.join(APPROVAL_DIR, f"{deploy_id}.json"), "w", encoding="utf-8") as f:
-        json.dump(record, f, indent=2)
+    request_path = os.path.join(DEPLOY_DIR, f"{deploy_id}.json")
+    approval_path = os.path.join(APPROVAL_DIR, f"{deploy_id}.json")
+    lock_path = os.path.join(DEPLOY_DIR, ".approval.lock")
+    with open(lock_path, "w", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not read_json(request_path):
+            return 404, {"error": "deployment request not found"}
+
+        existing = read_json(approval_path)
+        if existing:
+            if existing.get("decision") == decision:
+                return 200, {"status": decision, "deployment_id": deploy_id,
+                             "idempotent": True}
+            return 409, {"error": f"deployment already has decision '{existing.get('decision')}'"}
+
+        record = {"deployment_id": deploy_id, "decision": decision,
+                  "reason": str(data.get("reason") or ""),
+                  "decided_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                  "decided_by": os.environ.get("USER", "operator")}
+        temporary = f"{approval_path}.{uuid.uuid4().hex}.tmp"
+        with open(temporary, "w", encoding="utf-8") as f:
+            json.dump(record, f, indent=2)
+            f.write("\n")
+        os.replace(temporary, approval_path)
+
     append_event(f"{uuid.uuid4()}:0", decision, "mission-control", f"deployment {deploy_id}")
-    return 200, {"status": decision, "deployment_id": deploy_id}
+    return 200, {"status": decision, "deployment_id": deploy_id,
+                 "idempotent": False}
 
 
 def list_deployments():

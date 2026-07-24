@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -63,6 +64,18 @@ class MissionControlTests(unittest.TestCase):
         else:
             os.environ["HERMES_STOP_FILE"] = self.old_stop
         self.temp.cleanup()
+
+    def write_deployment_request(self, deployment_id):
+        self.paths["deployments"].mkdir(parents=True, exist_ok=True)
+        path = self.paths["deployments"] / f"{deployment_id}.json"
+        path.write_text(json.dumps({
+            "id": deployment_id,
+            "title": "Release candidate",
+            "summary": "All checks passed",
+            "risk": "medium",
+            "created_at": "2026-07-24T00:00:00Z",
+        }), encoding="utf-8")
+        return path
 
     def test_registry_overlays_live_status(self):
         registry = mission_control.load_provider_registry()
@@ -138,13 +151,35 @@ class MissionControlTests(unittest.TestCase):
         self.assertFalse((self.paths["requests"] / f"{created['request_id']}.json").exists())
 
     def test_deployment_decision_is_written_as_explicit_operator_state(self):
+        self.write_deployment_request("release-482")
         code, response = mission_control.deployment_decision(json.dumps({
             "deployment_id": "release-482", "decision": "approve", "reason": "Checks green",
         }).encode())
         self.assertEqual((code, response["status"]), (200, "approve"))
+        self.assertFalse(response["idempotent"])
         record = json.loads((self.paths["approvals"] / "release-482.json").read_text())
         self.assertEqual(record["decision"], "approve")
         self.assertEqual(record["reason"], "Checks green")
+
+        code, response = mission_control.deployment_decision(json.dumps({
+            "deployment_id": "release-482", "decision": "approve",
+        }).encode())
+        self.assertEqual((code, response["idempotent"]), (200, True))
+
+        code, response = mission_control.deployment_decision(json.dumps({
+            "deployment_id": "release-482", "decision": "deny", "reason": "Changed my mind",
+        }).encode())
+        self.assertEqual(code, 409)
+        self.assertIn("already has decision", response["error"])
+        unchanged = json.loads((self.paths["approvals"] / "release-482.json").read_text())
+        self.assertEqual(unchanged["decision"], "approve")
+
+    def test_deployment_decision_requires_a_durable_request(self):
+        code, response = mission_control.deployment_decision(json.dumps({
+            "deployment_id": "missing-release", "decision": "approve",
+        }).encode())
+        self.assertEqual(code, 404)
+        self.assertIn("not found", response["error"])
 
     def test_global_stop_blocks_and_then_releases_dispatch(self):
         code, response = mission_control.global_stop_control(json.dumps({
@@ -164,6 +199,114 @@ class MissionControlTests(unittest.TestCase):
         }).encode())
         self.assertEqual((code, response["status"]), (200, "running"))
         self.assertFalse(self.paths["stop"].exists())
+
+
+class DeployApprovalScriptTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.base = pathlib.Path(self.temp.name)
+        self.deployments = self.base / "deployments"
+        self.approvals = self.base / "approvals"
+        self.events = self.base / "events.log"
+        self.script = ROOT / "scripts" / "deploy-approval.sh"
+        self.env = {
+            **os.environ,
+            "HERMES_DEPLOY_REQUEST_DIR": str(self.deployments),
+            "HERMES_APPROVAL_DIR": str(self.approvals),
+            "HERMES_EVENT_LOG": str(self.events),
+            "HERMES_DEPLOY_NOTIFY": "0",
+            "USER": "Kevin",
+        }
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def run_script(self, *args):
+        return subprocess.run(
+            ["bash", str(self.script), *args],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            timeout=5,
+        )
+
+    def test_request_approval_and_gate_check_are_durable(self):
+        created = self.run_script(
+            "request",
+            "--id", "release-9000",
+            "--title", "AdVanced OS release",
+            "--summary", "CI green; no schema changes",
+            "--repository", "Kev1112005/AdVanced-OS",
+            "--ref", "main@abc123",
+            "--risk", "low",
+            "--checks", "8 tests passed",
+            "--rollback", "Revert merge commit",
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        self.assertIn("approve deploy release-9000", created.stdout)
+        request = json.loads((self.deployments / "release-9000.json").read_text())
+        self.assertEqual(request["status"], "pending")
+        self.assertEqual(request["risk"], "low")
+
+        pending = self.run_script("check", "--id", "release-9000")
+        self.assertEqual(pending.returncode, 1)
+        self.assertEqual(json.loads(pending.stdout)["status"], "pending")
+
+        approved = self.run_script(
+            "decide",
+            "--id", "release-9000",
+            "--decision", "approve",
+            "--by", "Kevin via Discord",
+        )
+        self.assertEqual(approved.returncode, 0, approved.stderr)
+        self.assertFalse(json.loads(approved.stdout)["idempotent"])
+
+        repeated = self.run_script(
+            "decide",
+            "--id", "release-9000",
+            "--decision", "approve",
+            "--by", "Kevin via Discord",
+        )
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+        self.assertTrue(json.loads(repeated.stdout)["idempotent"])
+
+        check = self.run_script("check", "--id", "release-9000")
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertEqual(json.loads(check.stdout)["decision"], "approve")
+
+        conflict = self.run_script(
+            "decide",
+            "--id", "release-9000",
+            "--decision", "deny",
+            "--reason", "conflicting decision",
+        )
+        self.assertEqual(conflict.returncode, 2)
+        decision = json.loads((self.approvals / "release-9000.json").read_text())
+        self.assertEqual(decision["decision"], "approve")
+
+    def test_denial_blocks_the_gate(self):
+        created = self.run_script(
+            "request",
+            "--id", "release-denied",
+            "--title", "Risky release",
+            "--summary", "Schema migration requires review",
+            "--risk", "high",
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        denied = self.run_script(
+            "decide",
+            "--id", "release-denied",
+            "--decision", "deny",
+            "--reason", "Rollback plan is incomplete",
+            "--by", "Kevin via Discord",
+        )
+        self.assertEqual(denied.returncode, 0, denied.stderr)
+
+        check = self.run_script("check", "--id", "release-denied")
+        self.assertEqual(check.returncode, 2)
+        record = json.loads(check.stdout)
+        self.assertEqual(record["decision"], "deny")
+        self.assertEqual(record["reason"], "Rollback plan is incomplete")
 
 
 if __name__ == "__main__":

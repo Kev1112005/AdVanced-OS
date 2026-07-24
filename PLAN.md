@@ -20,10 +20,10 @@
 | Phase 1b | Complete | Correlation IDs carry the dispatch depth |
 | Phase 1c | Operator-disabled | Logger remains available, but automatic cost collection and GUI views are disabled because Claude development is subscription-backed |
 | Phase 3 | Complete | Mission Control, provider registry, event log, status snapshot, durable orders, and operator controls implemented |
-| Phase 4 | **Next** | Discord deploy summaries and explicit approve/deny response flow |
+| Phase 4 | Complete | Durable Discord deploy summaries and immutable approve/deny decisions shared with Mission Control |
 | Phase 1a | Complete | Async request/notification bridge and serial dispatch consumer implemented |
 | Phase 5 | In progress | Targeted alerting, retry/backoff, heartbeat checks, and pipeline verification exist |
-| Phase 5e | Planned | Concrete shell QA gate must precede unattended ticket intake |
+| Phase 5e | **Next** | Concrete shell QA gate must precede unattended ticket intake |
 
 ## Interface Architecture
 
@@ -95,7 +95,7 @@ development is subscription-backed and the telemetry was not useful to Kevin.
 - No authentication. Single-user, local-only. Reverse proxy handles auth if exposed.
 - No mobile app. The Discord CLI is the mobile interface.
 
-### Phase 4: Discord Approval UX (NEXT — MEDIUM)
+### Phase 4: Discord Approval UX (COMPLETE)
 
 The control surface to complement the GUI's awareness:
 - **Clear deploy notifications** — "PR #N merged. Build passing. Deploy? (yes/no/notify)"
@@ -103,6 +103,17 @@ The control surface to complement the GUI's awareness:
 - **Cost alert** — "Weekly spend at 80% of cap. This task: $X. Continue?"
 - **Workflow status** — "Worker phase: committing. ETA: ~2 min."
 - **Global stop button** — Always available, always visible
+
+Implementation:
+
+- `scripts/deploy-approval.sh` owns durable request, notify, decide, status,
+  list, and pre-deploy check operations.
+- `skills/deployment-approval/SKILL.md` maps Kevin's explicit Discord wording to
+  the durable decision command.
+- Mission Control reads and decides against the same request and approval
+  directories.
+- Decisions are immutable and idempotent. Approval records never execute a
+  deployment.
 
 ### Phase 1a: Async Shell Bridge (COMPLETE)
 
