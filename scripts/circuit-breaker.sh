@@ -25,7 +25,11 @@ expand_home() { echo "${1/#\~/$HOME}"; }
 
 # read a flat key's value from the simple YAML (grep first match, strip comments/quotes)
 yaml_get() {
-  local key="$1" file="$2"
+  local key="${1:-}" file="${2:-}"
+  [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+    echo "error: invalid configuration key" >&2
+    return 4
+  }
   # `|| true` so an absent key doesn't fail the pipeline under `set -o pipefail`
   # (grep exits 1 on no match), which would kill the script before a :-default applies.
   { grep -E "^[[:space:]]*${key}:" "$file" 2>/dev/null || true; } | head -n1 \

@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+import urllib.error
 import urllib.request
 
 
@@ -105,6 +106,26 @@ class MissionControlTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(registry["agents"][0]["id"], "azrael")
             self.assertEqual(registry["agents"][0]["provider_id"], "hermes")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_post_rejects_oversized_request_body(self):
+        server = mission_control.ThreadingHTTPServer(
+            ("127.0.0.1", 0), mission_control.Handler
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{server.server_port}/api/deploy/decision",
+                data=b"x" * (mission_control.MAX_REQUEST_BODY_BYTES + 1),
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(request, timeout=2)
+            self.assertEqual(caught.exception.code, 413)
         finally:
             server.shutdown()
             server.server_close()
@@ -432,6 +453,73 @@ class DeployApprovalScriptTests(unittest.TestCase):
         self.assertTrue((self.deployments / "release-notify-retry.json").exists())
         self.assertIn("request pending", created.stdout)
         self.assertIn("request release-notify-retry is durable", created.stderr)
+
+    def test_request_and_decision_field_limits_fail_closed(self):
+        oversized_request = self.run_script(
+            "request",
+            "--id", "release-oversized",
+            "--title", "x" * 161,
+            "--summary", "Must not create state",
+        )
+        self.assertEqual(oversized_request.returncode, 3)
+        self.assertIn("field 'title'", oversized_request.stderr)
+        self.assertFalse((self.deployments / "release-oversized.json").exists())
+
+        created = self.run_script(
+            "request",
+            "--id", "release-reason-limit",
+            "--title", "Reason limit",
+            "--summary", "Must reject an oversized decision",
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        oversized_decision = self.run_script(
+            "decide",
+            "--id", "release-reason-limit",
+            "--decision", "deny",
+            "--reason", "x" * 2001,
+        )
+        self.assertEqual(oversized_decision.returncode, 3)
+        self.assertIn("field 'reason'", oversized_decision.stderr)
+        self.assertFalse(
+            (self.approvals / "release-reason-limit.json").exists()
+        )
+
+    def test_list_uses_shared_id_and_record_validation(self):
+        created = self.run_script(
+            "request",
+            "--id", "release-valid",
+            "--title", "Valid pending request",
+            "--summary", "This request should be listed",
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        self.deployments.joinpath("release:legacy.json").write_text(
+            json.dumps({
+                "id": "release:legacy",
+                "title": "Legacy ID",
+                "summary": "Must not be listed",
+            }),
+            encoding="utf-8",
+        )
+        self.deployments.joinpath("mismatched.json").write_text(
+            json.dumps({
+                "id": "different",
+                "title": "Mismatched ID",
+                "summary": "Must not be listed",
+            }),
+            encoding="utf-8",
+        )
+
+        listed = self.run_script("list")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertEqual(
+            [item["id"] for item in json.loads(listed.stdout)],
+            ["release-valid"],
+        )
+
+    def test_notify_missing_request_returns_documented_invalid_state(self):
+        notified = self.run_script("notify", "--id", "release-missing")
+        self.assertEqual(notified.returncode, 3)
+        self.assertIn("request not found", notified.stderr)
 
     def test_documented_smoke_test_uses_isolated_state(self):
         setup = (

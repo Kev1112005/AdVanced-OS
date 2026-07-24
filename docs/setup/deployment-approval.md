@@ -24,6 +24,34 @@ configuration:
 export HERMES_DEPLOY_APPROVAL_TARGET="discord:CHANNEL_ID"
 ```
 
+### State and Lock Contract
+
+Mission Control and the Hermes command must use the same
+`HERMES_DEPLOY_REQUEST_DIR` and `HERMES_APPROVAL_DIR` values. The shared lock is
+`<request-dir>/.approval.lock`; every writer locks that one inode before reading
+or changing either directory. Creating the request directory is the sole
+pre-lock bootstrap operation because the lock file must live inside it; that
+idempotent `mkdir` does not read or mutate deployment records.
+
+The approval directory may be on a different filesystem. That does not weaken
+serialization because the lock's filesystem does not need to match the files it
+protects. Atomic writes create the temporary file beside its destination, so
+each `os.replace` remains within one filesystem. The unsafe configuration is two
+writers using different request directories—and therefore different lock
+files—against the same approval directory.
+
+Deployment IDs must start with an alphanumeric character and contain only
+letters, numbers, dots, underscores, and hyphens, up to 128 characters. Before
+upgrading older state, inspect both directories for legacy colon-bearing names:
+
+```bash
+find ~/.hermes/deploy-requests ~/.hermes/approvals \
+  -maxdepth 1 -type f -name '*:*' -print 2>/dev/null
+```
+
+Resolve any reported state manually before enabling the new gate. Never rename
+only one side of a request/decision pair.
+
 ## Create a Request
 
 The deploy pipeline prepares a risk summary, writes the durable request, and
@@ -52,6 +80,10 @@ fails; it prints a warning and the request remains pending. Send it again with:
 
 Mission Control reads the same request directory, so GUI and Discord approvals
 refer to one durable object.
+
+Safety-critical JSON records are limited to 16 KiB and individual human-entered
+fields have tighter limits. Mission Control rejects HTTP request bodies larger
+than 64 KiB. Oversized state fails closed rather than being truncated.
 
 ## Kevin’s Discord Responses
 

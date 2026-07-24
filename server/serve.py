@@ -56,6 +56,9 @@ APPROVAL_DIR = os.environ.get("HERMES_APPROVAL_DIR", f"{HOME}/.hermes/approvals"
 DEPLOY_DIR = os.environ.get("HERMES_DEPLOY_REQUEST_DIR", f"{HOME}/.hermes/deploy-requests")
 # CAP = float(os.environ.get("HERMES_WEEKLY_CAP", "20.0"))  # cost tracking disabled
 PORT = int(os.environ.get("MISSION_CONTROL_PORT", "3001"))
+MAX_REQUEST_BODY_BYTES = int(
+    os.environ.get("MISSION_CONTROL_MAX_BODY_BYTES", str(64 * 1024))
+)
 
 START = time.time()
 
@@ -658,7 +661,25 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        n = int(self.headers.get("Content-Length", 0) or 0)
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            self._send(400, {"error": "invalid Content-Length"})
+            return
+        if n < 0:
+            self._send(400, {"error": "invalid Content-Length"})
+            return
+        if n > MAX_REQUEST_BODY_BYTES:
+            self._send(
+                413,
+                {
+                    "error": (
+                        f"request body exceeds the "
+                        f"{MAX_REQUEST_BODY_BYTES}-byte limit"
+                    )
+                },
+            )
+            return
         body = self.rfile.read(n) if n else b""
         if path == "/api/dispatch":
             self._send(*create_dispatch(body))

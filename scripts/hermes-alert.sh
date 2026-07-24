@@ -16,8 +16,13 @@ RATE_LIMIT_SECONDS=30   # Discord webhook courtesy: at most one alert per level 
 # read a flat key from the simple YAML (same convention as circuit-breaker.sh).
 # `|| true` so an absent key doesn't fail the pipeline under `set -o pipefail`.
 yaml_get() {
-  { grep -E "^[[:space:]]*$1:" "$2" 2>/dev/null || true; } | head -n1 \
-    | sed -E "s/^[[:space:]]*$1:[[:space:]]*//; s/[[:space:]]*#.*$//; s/^\"//; s/\"$//"
+  local key="${1:-}" file="${2:-}"
+  [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+    echo "error: invalid configuration key" >&2
+    return 1
+  }
+  { grep -E "^[[:space:]]*${key}:" "$file" 2>/dev/null || true; } | head -n1 \
+    | sed -E "s/^[[:space:]]*${key}:[[:space:]]*//; s/[[:space:]]*#.*$//; s/^\"//; s/\"$//"
 }
 
 # Webhook resolution order: env var > gitignored file > config value (empty in repo).

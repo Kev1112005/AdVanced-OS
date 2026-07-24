@@ -25,6 +25,12 @@ explicit decision in `~/.hermes/approvals/`, and the deployment procedure calls
 locking, record validation, immutable decisions, and gate state. Decisions are
 immutable and approval records never execute deployments.
 
+The lock file is anchored in the deployment request directory. All cooperating
+interfaces must share both configured state paths and therefore that same lock
+inode. The approval directory can live on another filesystem: serialization
+comes from the shared lock, while each atomic replacement uses a temporary file
+created beside its destination.
+
 ### Provider Registry
 
 `config/providers.json` is the source of truth for provider adapters and registered agents. It records provider type, transport, tmux session, role, model label, capabilities, and optional restart command. Mission Control and the status snapshot read this same registry, eliminating hard-coded rosters.

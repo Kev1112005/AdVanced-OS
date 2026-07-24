@@ -18,6 +18,24 @@ from datetime import datetime, timezone
 
 
 DEPLOYMENT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+MAX_RECORD_BYTES = 16 * 1024
+REQUEST_FIELD_LIMITS = {
+    "title": 160,
+    "summary": 1000,
+    "repository": 240,
+    "ref": 240,
+    "checks": 1000,
+    "rollback": 1000,
+    "correlation_id": 200,
+    "requested_by": 200,
+    "created_at": 64,
+}
+DECISION_FIELD_LIMITS = {
+    "reason": 2000,
+    "decided_by": 200,
+    "decided_at": 64,
+}
+ALLOWED_RISKS = {"low", "medium", "high", "critical"}
 EXIT_PENDING = 1
 EXIT_DENIED = 2
 EXIT_INVALID = 3
@@ -69,6 +87,10 @@ def _approval_path(approval_dir, deployment_id):
 
 def _read_record(path, label):
     try:
+        if path.stat().st_size > MAX_RECORD_BYTES:
+            raise InvalidRecord(
+                f"{label} exceeds the {MAX_RECORD_BYTES}-byte limit: {path}"
+            )
         with open(path, encoding="utf-8") as handle:
             record = json.load(handle)
     except (OSError, ValueError) as exc:
@@ -78,23 +100,40 @@ def _read_record(path, label):
     return record
 
 
-def _load_request(deploy_dir, deployment_id):
-    path = _request_path(deploy_dir, deployment_id)
-    if not path.exists():
-        raise MissingRequest(f"deployment request not found: {deployment_id}")
-    request = _read_record(path, "deployment request")
+def _bounded_text(record, field, limit, label, required=False):
+    value = record.get(field, "")
+    if not isinstance(value, str):
+        raise InvalidRecord(f"{label} field '{field}' must be text")
+    if required and not value.strip():
+        raise InvalidRecord(f"{label} field '{field}' is required")
+    if len(value.encode("utf-8")) > limit:
+        raise InvalidRecord(
+            f"{label} field '{field}' exceeds the {limit}-byte limit"
+        )
+    return value
+
+
+def _validate_request(request, deployment_id):
     if request.get("id") != deployment_id:
         raise InvalidRecord(
             f"deployment request id does not match filename: {deployment_id}"
         )
+    for field, limit in REQUEST_FIELD_LIMITS.items():
+        _bounded_text(
+            request,
+            field,
+            limit,
+            "deployment request",
+            required=field in ("title", "summary"),
+        )
+    if request.get("risk", "medium") not in ALLOWED_RISKS:
+        raise InvalidRecord(f"deployment request has invalid risk: {deployment_id}")
+    if request.get("status", "pending") != "pending":
+        raise InvalidRecord(f"deployment request has invalid status: {deployment_id}")
     return request
 
 
-def _load_decision(approval_dir, deployment_id):
-    path = _approval_path(approval_dir, deployment_id)
-    if not path.exists():
-        return None
-    decision = _read_record(path, "deployment decision")
+def _validate_decision(decision, deployment_id):
     if decision.get("deployment_id") != deployment_id:
         raise InvalidRecord(
             f"deployment decision id does not match filename: {deployment_id}"
@@ -103,7 +142,25 @@ def _load_decision(approval_dir, deployment_id):
         raise InvalidRecord(
             f"deployment decision must contain approve or deny: {deployment_id}"
         )
+    for field, limit in DECISION_FIELD_LIMITS.items():
+        _bounded_text(decision, field, limit, "deployment decision")
     return decision
+
+
+def _load_request(deploy_dir, deployment_id):
+    path = _request_path(deploy_dir, deployment_id)
+    if not path.exists():
+        raise MissingRequest(f"deployment request not found: {deployment_id}")
+    request = _read_record(path, "deployment request")
+    return _validate_request(request, deployment_id)
+
+
+def _load_decision(approval_dir, deployment_id):
+    path = _approval_path(approval_dir, deployment_id)
+    if not path.exists():
+        return None
+    decision = _read_record(path, "deployment decision")
+    return _validate_decision(decision, deployment_id)
 
 
 def _atomic_write(path, record):
@@ -121,30 +178,27 @@ def _atomic_write(path, record):
 
 
 @contextmanager
-def _state_lock(deploy_dir):
+def _state_lock(deploy_dir, approval_dir=None):
     deploy_path = Path(deploy_dir)
     deploy_path.mkdir(parents=True, exist_ok=True)
     with open(deploy_path / ".approval.lock", "a", encoding="utf-8") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        if approval_dir is not None:
+            Path(approval_dir).mkdir(parents=True, exist_ok=True)
         yield
 
 
 def create_request(deploy_dir, approval_dir, record):
     """Create one durable deployment request under the shared state lock."""
     deployment_id = validate_deployment_id(record.get("id"))
-    if not str(record.get("title") or "").strip():
-        raise InvalidRecord("deployment request title is required")
-    if not str(record.get("summary") or "").strip():
-        raise InvalidRecord("deployment request summary is required")
+    _validate_request(record, deployment_id)
 
     deploy_path = Path(deploy_dir)
     approval_path = Path(approval_dir)
-    deploy_path.mkdir(parents=True, exist_ok=True)
-    approval_path.mkdir(parents=True, exist_ok=True)
     request_file = _request_path(deploy_path, deployment_id)
     decision_file = _approval_path(approval_path, deployment_id)
 
-    with _state_lock(deploy_path):
+    with _state_lock(deploy_path, approval_path):
         if request_file.exists():
             raise ExistingRequest(f"deployment request already exists: {deployment_id}")
         if decision_file.exists():
@@ -165,9 +219,16 @@ def record_decision(
     deployment_id = validate_deployment_id(deployment_id)
     if decision not in ("approve", "deny"):
         raise InvalidRecord("decision must be approve or deny")
+    decision_record = {
+        "deployment_id": deployment_id,
+        "decision": decision,
+        "reason": str(reason or ""),
+        "decided_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "decided_by": str(decided_by or "operator"),
+    }
+    _validate_decision(decision_record, deployment_id)
 
-    Path(approval_dir).mkdir(parents=True, exist_ok=True)
-    with _state_lock(deploy_dir):
+    with _state_lock(deploy_dir, approval_dir):
         _load_request(deploy_dir, deployment_id)
         existing = _load_decision(approval_dir, deployment_id)
         if existing:
@@ -182,14 +243,10 @@ def record_decision(
                 "idempotent": True,
             }
 
-        record = {
-            "deployment_id": deployment_id,
-            "decision": decision,
-            "reason": str(reason or ""),
-            "decided_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "decided_by": str(decided_by or "operator"),
-        }
-        _atomic_write(_approval_path(approval_dir, deployment_id), record)
+        _atomic_write(
+            _approval_path(approval_dir, deployment_id),
+            decision_record,
+        )
 
     return {
         "status": decision,
@@ -213,6 +270,23 @@ def deployment_status(deploy_dir, approval_dir, deployment_id):
         request = _load_request(deploy_dir, deployment_id)
         decision = _load_decision(approval_dir, deployment_id)
     return {"request": request, "decision": decision}
+
+
+def list_pending(deploy_dir, approval_dir):
+    """Return valid pending requests using the shared ID and record contract."""
+    pending = []
+    with _state_lock(deploy_dir):
+        for path in Path(deploy_dir).glob("*.json"):
+            try:
+                deployment_id = validate_deployment_id(path.stem)
+                request = _load_request(deploy_dir, deployment_id)
+            except ApprovalStateError:
+                continue
+            if _approval_path(approval_dir, deployment_id).exists():
+                continue
+            pending.append(request)
+    pending.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+    return pending
 
 
 def _parser():
@@ -249,6 +323,10 @@ def _parser():
         state.add_argument("--deploy-dir", required=True)
         state.add_argument("--approval-dir", required=True)
         state.add_argument("--id", required=True)
+
+    list_command = subparsers.add_parser("list")
+    list_command.add_argument("--deploy-dir", required=True)
+    list_command.add_argument("--approval-dir", required=True)
     return parser
 
 
@@ -301,6 +379,9 @@ def main(argv=None):
                 args.deploy_dir, args.approval_dir, args.id
             )
             print(json.dumps(result, indent=2))
+            return 0
+        if args.command == "list":
+            print(json.dumps(list_pending(args.deploy_dir, args.approval_dir), indent=2))
             return 0
     except DecisionConflict as exc:
         print(f"error: {exc}", file=sys.stderr)

@@ -10,6 +10,17 @@ UNIT_SOURCE="$REPO_ROOT/config/systemd/$UNIT_NAME"
 UNIT_TARGET="/etc/systemd/system/$UNIT_NAME"
 PORT="4001"
 
+run_privileged() {
+  if (( EUID == 0 )); then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    echo "error: this action requires root privileges and sudo is unavailable" >&2
+    return 126
+  fi
+}
+
 usage() {
   cat <<EOF
 dashboard-service.sh — Mission Control service lifecycle
@@ -27,10 +38,10 @@ EOF
 wait_for_health() {
   local _
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if sudo systemctl is-active --quiet "$SERVICE_NAME" \
+    if systemctl is-active --quiet "$SERVICE_NAME" \
       && curl --max-time 1 --fail --silent "http://127.0.0.1:$PORT/api/health" >/dev/null; then
       sleep 0.5
-      if sudo systemctl is-active --quiet "$SERVICE_NAME" \
+      if systemctl is-active --quiet "$SERVICE_NAME" \
         && curl --max-time 1 --fail --silent "http://127.0.0.1:$PORT/api/health" >/dev/null; then
         return 0
       fi
@@ -47,25 +58,25 @@ case "${1:-}" in
       echo "error: service template not found: $UNIT_SOURCE" >&2
       exit 1
     }
-    if ! sudo systemctl is-active --quiet "$SERVICE_NAME" \
+    if ! systemctl is-active --quiet "$SERVICE_NAME" \
       && curl --max-time 1 --fail --silent "http://127.0.0.1:$PORT/api/health" >/dev/null; then
       echo "error: port $PORT is already served outside $SERVICE_NAME; stop the unmanaged dashboard before installing" >&2
       exit 1
     fi
-    sudo install -m 0644 "$UNIT_SOURCE" "$UNIT_TARGET"
-    sudo systemctl daemon-reload
-    sudo systemctl enable "$SERVICE_NAME"
-    sudo systemctl restart "$SERVICE_NAME"
+    run_privileged install -m 0644 "$UNIT_SOURCE" "$UNIT_TARGET"
+    run_privileged systemctl daemon-reload
+    run_privileged systemctl enable "$SERVICE_NAME"
+    run_privileged systemctl restart "$SERVICE_NAME"
     wait_for_health
     echo "Mission Control installed and healthy: $SERVICE_NAME"
     ;;
   restart)
-    sudo systemctl restart "$SERVICE_NAME"
+    run_privileged systemctl restart "$SERVICE_NAME"
     wait_for_health
     echo "Mission Control restarted and healthy: $SERVICE_NAME"
     ;;
   status)
-    sudo systemctl --no-pager --full status "$SERVICE_NAME"
+    systemctl --no-pager --full status "$SERVICE_NAME"
     curl --max-time 2 --fail --silent --show-error \
       "http://127.0.0.1:$PORT/api/health"
     echo

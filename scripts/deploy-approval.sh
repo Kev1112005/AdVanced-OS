@@ -55,16 +55,26 @@ new_cid() {
 }
 
 yaml_get() {
-  { grep -E "^[[:space:]]*$1:" "$2" 2>/dev/null || true; } | head -n1 \
-    | sed -E "s/^[[:space:]]*$1:[[:space:]]*//; s/[[:space:]]*#.*$//; s/^\"//; s/\"$//"
+  local key="${1:-}" file="${2:-}"
+  [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+    echo "error: invalid configuration key" >&2
+    return 4
+  }
+  { grep -E "^[[:space:]]*${key}:" "$file" 2>/dev/null || true; } | head -n1 \
+    | sed -E "s/^[[:space:]]*${key}:[[:space:]]*//; s/[[:space:]]*#.*$//; s/^\"//; s/\"$//"
 }
 
 resolve_target() {
   local target="${HERMES_DEPLOY_APPROVAL_TARGET:-}"
   if [[ -z "$target" ]]; then
-    target="$(yaml_get channel_id "$CONFIG")"
+    if ! target="$(yaml_get channel_id "$CONFIG")"; then
+      return 4
+    fi
   fi
-  [[ -n "$target" ]] || die "no Discord approval target configured" 4
+  if [[ -z "$target" ]]; then
+    echo "error: no Discord approval target configured" >&2
+    return 4
+  fi
   [[ "$target" == *:* ]] || target="discord:$target"
   printf '%s' "$target"
 }
@@ -86,8 +96,11 @@ approval_path() {
 notify_request() {
   local id="$1" path message target
   path="$(request_path "$id")"
-  [[ -f "$path" ]] || die "deployment request not found: $id"
-  message="$(python3 - "$path" <<'PY'
+  if [[ ! -f "$path" ]]; then
+    echo "error: deployment request not found: $id" >&2
+    return 3
+  fi
+  if ! message="$(python3 - "$path" <<'PY'
 import json
 import sys
 
@@ -121,17 +134,26 @@ lines.extend([
 ])
 print("\n".join(lines))
 PY
-)"
+)"; then
+    echo "error: deployment request is unreadable: $id" >&2
+    return 3
+  fi
 
   if [[ "$NOTIFY" == "0" ]]; then
     printf '%s\n' "$message"
     return 0
   fi
 
-  command -v hermes >/dev/null 2>&1 || die "hermes CLI not found; request remains pending" 4
-  target="$(resolve_target)"
+  if ! command -v hermes >/dev/null 2>&1; then
+    echo "error: hermes CLI not found; request remains pending" >&2
+    return 4
+  fi
+  if ! target="$(resolve_target)"; then
+    return 4
+  fi
   if ! hermes send --quiet --to "$target" "$message"; then
-    die "Discord notification failed; request remains pending" 4
+    echo "error: Discord notification failed; request remains pending" >&2
+    return 4
   fi
   log_event "$(new_cid)" notify deploy-approval "deployment approval requested: $id"
 }
@@ -173,7 +195,7 @@ cmd_request() {
     --requested-by "${USER:-operator}" >/dev/null
 
   log_event "$cid" deploy_request deploy-approval "$id: $title"
-  if ! (notify_request "$id"); then
+  if ! notify_request "$id"; then
     echo "warning: deployment request $id is durable but notification failed; retry with notify --id $id" >&2
   fi
   printf 'deployment request pending: %s\n' "$id"
@@ -243,25 +265,9 @@ cmd_status() {
 }
 
 cmd_list() {
-  python3 - "$DEPLOY_DIR" "$APPROVAL_DIR" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-deploy_dir, approval_dir = map(Path, sys.argv[1:])
-pending = []
-if deploy_dir.is_dir():
-    for path in deploy_dir.glob("*.json"):
-        if (approval_dir / path.name).exists():
-            continue
-        try:
-            with open(path, encoding="utf-8") as handle:
-                pending.append(json.load(handle))
-        except (OSError, ValueError):
-            continue
-pending.sort(key=lambda item: item.get("created_at", ""), reverse=True)
-print(json.dumps(pending, indent=2))
-PY
+  python3 "$APPROVAL_HELPER" list \
+    --deploy-dir "$DEPLOY_DIR" \
+    --approval-dir "$APPROVAL_DIR"
 }
 
 command="${1:-}"
