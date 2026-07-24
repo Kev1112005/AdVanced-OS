@@ -68,7 +68,8 @@ Types: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`
 1. Hermes dispatches a task to a worker with specific scope
 2. Worker implements in a feature branch
 3. Worker opens PR against `main`
-4. CI runs (lint ShellCheck, markdown link check)
+4. CI runs (Python tests and compilation, registry validation, shell syntax,
+   ShellCheck, and dashboard JavaScript syntax)
 5. Hermes reviews, merges on green
 6. Cleanup: remove feature worktree, prune remote branch
 

@@ -12,6 +12,19 @@
 4. **Small, idempotent, frequently-committed tasks** — the only reliable disaster recovery
 5. **Kevin is the top of the architecture** — every significant decision, deploy, or mutation routes to Discord for approval
 
+## Current Status
+
+| Phase | Status | Notes |
+|------|--------|-------|
+| Phase 2 | Complete | Circuit breaker, disk-backed global stop, depth gate, and spend-cap reader implemented |
+| Phase 1b | Complete | Correlation IDs carry the dispatch depth |
+| Phase 1c | Operator-disabled | Logger remains available, but automatic cost collection and GUI views are disabled because Claude development is subscription-backed |
+| Phase 3 | Complete | Mission Control, provider registry, event log, status snapshot, durable orders, and operator controls implemented |
+| Phase 4 | **Next** | Discord deploy summaries and explicit approve/deny response flow |
+| Phase 1a | Complete | Async request/notification bridge and serial dispatch consumer implemented |
+| Phase 5 | In progress | Targeted alerting, retry/backoff, heartbeat checks, and pipeline verification exist |
+| Phase 5e | Planned | Concrete shell QA gate must precede unattended ticket intake |
+
 ## Interface Architecture
 
 AdVanced OS has two complementary interfaces:
@@ -25,21 +38,25 @@ The GUI is the primary interface and local control surface. The CLI remains the 
 
 ## Implementation Phases
 
-### Phase 1b: Correlation ID (CHEAP — 30 minutes)
+### Phase 1b: Correlation ID (COMPLETE)
 
 - `uuidgen` at the start of every user interaction (Kevin says X)
 - Written into the session DB alongside each cron log and worker dispatch
 - Not a tracing DB. A single UUID column in existing logs.
 - Must carry the dispatch-depth counter for the circuit breaker (Phase 2)
 
-### Phase 1c: Cost Logging (CHEAP — 30 minutes)
+### Phase 1c: Cost Logging (OPERATOR-DISABLED)
 
 - Claude Code emits usage JSON in its status output
 - Parse after each task: model, input tokens, output tokens, cache read/write, cost
 - Append to a log file or session DB
 - Feeds the GUI's spend-to-cap meters and per-worker cost breakdowns
 
-### Phase 2: Circuit Breaker (HIGH — half a day) — BUILD THIS FIRST
+`scripts/cost-log.sh` remains available, and the circuit breaker can read its CSV.
+Automatic collection and Mission Control cost views are disabled because Claude
+development is subscription-backed and the telemetry was not useful to Kevin.
+
+### Phase 2: Circuit Breaker (COMPLETE)
 
 **The single most important safety item. All automation is gated behind this.**
 
@@ -49,7 +66,7 @@ The GUI is the primary interface and local control surface. The CLI remains the 
 4. **Time cap** — If task exceeds N minutes, checkpoint and ask Kevin to confirm continue.
 5. **Cooperative halt** — Kill must let current commit finish before hard-stopping.
 
-### Phase 3: Mission Control GUI (MEDIUM — 1 day)
+### Phase 3: Mission Control GUI (COMPLETE)
 
 **The core interface of the operating system.** A visual dashboard showing every agent, every task, every cost, and every system health metric in one browser tab.
 
@@ -78,7 +95,7 @@ The GUI is the primary interface and local control surface. The CLI remains the 
 - No authentication. Single-user, local-only. Reverse proxy handles auth if exposed.
 - No mobile app. The Discord CLI is the mobile interface.
 
-### Phase 4: Discord Approval UX (MEDIUM — 1 day)
+### Phase 4: Discord Approval UX (NEXT — MEDIUM)
 
 The control surface to complement the GUI's awareness:
 - **Clear deploy notifications** — "PR #N merged. Build passing. Deploy? (yes/no/notify)"
@@ -87,7 +104,7 @@ The control surface to complement the GUI's awareness:
 - **Workflow status** — "Worker phase: committing. ETA: ~2 min."
 - **Global stop button** — Always available, always visible
 
-### Phase 1a: Async Shell Bridge (MEDIUM — half day)
+### Phase 1a: Async Shell Bridge (COMPLETE)
 
 Two shell commands workers can call asynchronously (gated behind circuit breaker):
 

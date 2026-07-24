@@ -1,0 +1,18 @@
+[Unit]
+Description=AdVanced OS Mission Control
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/AdVanced-OS
+Environment=MISSION_CONTROL_PORT=4001
+ExecStart=/home/%i/AdVanced-OS/scripts/start-dashboard.sh
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -556,13 +556,13 @@
 
     const DEMO = {
       orders: [
-        {request_id:'demo-1', title:'Reforge the provider registry', agent_id:'codex-azrael', agent_name:'Azrael', provider_id:'codex', priority:'critical', repository:'AdVanced-OS', branch:'agent/provider-registry', status:'running', created_at:new Date(Date.now()-18*60000).toISOString(), task:'Create a transport-neutral registry for every sworn agent.', simulated:true},
+        {request_id:'demo-1', title:'Reforge the provider registry', agent_id:'azrael', agent_name:'Azrael', provider_id:'hermes', priority:'critical', repository:'AdVanced-OS', branch:'agent/provider-registry', status:'running', created_at:new Date(Date.now()-18*60000).toISOString(), task:'Create a transport-neutral registry for every sworn agent.', simulated:true},
         {request_id:'demo-2', title:'Audit the circuit-breaker wards', agent_id:'ezekiel', agent_name:'Ezekiel', provider_id:'hermes', priority:'high', repository:'AdVanced-OS', branch:'', status:'queued', created_at:new Date(Date.now()-8*60000).toISOString(), task:'Verify that no order bypasses the global stop.', simulated:true},
         {request_id:'demo-3', title:'Prepare the ObsoleteBot deployment rite', agent_id:'claude-obsoletebot', agent_name:'Asmodai', provider_id:'claude-code', priority:'normal', repository:'ObsoleteBot', branch:'release/next', status:'queued', created_at:new Date(Date.now()-3*60000).toISOString(), task:'Run the release checks and prepare a risk summary.', simulated:true}
       ],
       events: [
-        {ts:new Date(Date.now()-17*60000).toISOString(), correlation_id:'71ac9e:0', event:'dispatch', agent:'codex-azrael', detail:'Reforge the provider registry'},
-        {ts:new Date(Date.now()-12*60000).toISOString(), correlation_id:'71ac9e:0', event:'qa_pass', agent:'codex-azrael', detail:'Registry schema validation passed'},
+        {ts:new Date(Date.now()-17*60000).toISOString(), correlation_id:'71ac9e:0', event:'dispatch', agent:'azrael', detail:'Reforge the provider registry'},
+        {ts:new Date(Date.now()-12*60000).toISOString(), correlation_id:'71ac9e:0', event:'qa_pass', agent:'azrael', detail:'Registry schema validation passed'},
         {ts:new Date(Date.now()-8*60000).toISOString(), correlation_id:'9ed141:0', event:'queued', agent:'ezekiel', detail:'Audit the circuit-breaker wards'},
         {ts:new Date(Date.now()-5*60000).toISOString(), correlation_id:'24bb80:0', event:'complete', agent:'claude-belial', detail:'Mission control visual reconnaissance complete'},
         {ts:new Date(Date.now()-2*60000).toISOString(), correlation_id:'2ac514:0', event:'approve', agent:'mission-control', detail:'Deployment rite sanctioned by Kevin'}
@@ -571,7 +571,7 @@
         {id:'demo-deploy-482', title:'ObsoleteBot · release/next', summary:'12 checks passed · no schema change · rollback image available', risk:'medium', created_at:nowISO(), simulated:true}
       ],
       live: {
-        'codex-azrael': `[01:43:07] ORDER RECEIVED · Reforge the provider registry\n[01:43:09] Inspecting dispatch boundary and status snapshot…\n[01:43:14] ✓ Registry schema loaded: 3 providers / 6 agents\n[01:43:21] ✓ Local tmux adapter bound to the Rock serial gate\n[01:43:29] Running verification rites…\n\n▸ Working tree clean. Awaiting the next instruction.`,
+        'azrael': `[01:43:07] ORDER RECEIVED · Reforge the provider registry\n[01:43:09] Inspecting dispatch boundary and status snapshot…\n[01:43:14] ✓ Registry schema loaded: 3 providers / 6 agents\n[01:43:21] ✓ Hermes orchestrator bound to the Rock serial gate\n[01:43:29] Running verification rites…\n\n▸ Working tree clean. Awaiting the next instruction.`,
         'claude-belial': `[01:39:11] BELIAL · GRAND MASTER / BUILD\n[01:39:14] Dashboard shell rendered successfully\n[01:39:20] ✓ Queue controls connected\n[01:39:24] ✓ Vox channel established\n\n❯ Awaiting orders`,
         'ezekiel': `[01:46:02] EZEKIEL · CHIEF LIBRARIAN\n[01:46:06] Consulting the Librarius for circuit-breaker doctrine…\n[01:46:12] No dispatch path may outrank the stop flag.\n\n❯ Research rite in progress`
       }

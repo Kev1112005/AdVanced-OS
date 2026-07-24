@@ -76,15 +76,15 @@
       "capabilities": ["dispatch", "follow_up", "pause", "cancel", "restart"]
     },
     {
-      "id": "codex-azrael",
+      "id": "azrael",
       "name": "Azrael",
-      "provider_id": "codex",
-      "session": "codex-azrael",
-      "role": "Supreme Grand Master · Codex",
-      "model": "Codex provider default",
-      "project": "Unassigned",
+      "provider_id": "hermes",
+      "session": "hermes",
+      "role": "Supreme Grand Master · Orchestrator",
+      "model": "DeepSeek V4 Flash",
+      "project": "AdVanced OS",
       "directory": "~",
-      "restart_command": ["codex"],
+      "restart_command": ["hermes", "--yolo"],
       "capabilities": ["dispatch", "follow_up", "pause", "cancel", "restart"]
     },
     {

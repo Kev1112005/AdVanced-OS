@@ -92,7 +92,7 @@ for dir in "$PIPE_DIR"/*/; do
   case "$state" in
     researching) stage=research; agent=ezekiel;      next_sub=scaffold; next_agent=sammael;       next_state=scaffolding; next_n=1; lines=200 ;;
     scaffolding) stage=scaffold; agent=sammael;      next_sub=build;    next_agent=claude-belial; next_state=building;    next_n=2; lines=200 ;;
-    building)    stage=build;    agent=claude-belial; next_sub="";      next_agent="";            next_state=done;        next_n=0; lines=300 ;;
+    building)    stage=build;    agent=claude-belial; next_sub="";      next_agent="";            next_state="done";      next_n=0; lines=300 ;;
     *) continue ;;   # done | failed | unknown — nothing to advance
   esac
 
@@ -129,7 +129,7 @@ for dir in "$PIPE_DIR"/*/; do
     printf '%s' "$next_state" > "$dir/state"
     log_ev "$base:$next_n" dispatch "$next_agent" "pipeline advance → $next_state"
   else
-    printf '%s' done > "$dir/state"
+    printf '%s' "done" > "$dir/state"
     generate_report "$dir"
     log_ev "$root_cid" complete "$agent" "pipeline done: $(cat "$dir/name" 2>/dev/null)"
   fi

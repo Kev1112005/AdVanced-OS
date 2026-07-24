@@ -3,7 +3,9 @@ import json
 import os
 import pathlib
 import tempfile
+import threading
 import unittest
+import urllib.request
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -29,18 +31,18 @@ class MissionControlTests(unittest.TestCase):
         self.paths["registry"].write_text(json.dumps({
             "version": 1,
             "providers": [{
-                "id": "codex", "name": "Codex", "type": "codex",
+                "id": "hermes", "name": "Hermes", "type": "hermes",
                 "transport": "local_tmux", "scope": "local",
             }],
             "agents": [{
-                "id": "codex-azrael", "name": "Azrael", "provider_id": "codex",
-                "session": "codex-azrael", "role": "Build", "model": "provider default",
-                "restart_command": ["codex"],
+                "id": "azrael", "name": "Azrael", "provider_id": "hermes",
+                "session": "hermes", "role": "Orchestrator", "model": "DeepSeek V4 Flash",
+                "restart_command": ["hermes", "--yolo"],
             }],
         }), encoding="utf-8")
         self.paths["status"].write_text(json.dumps({
             "workers": [{
-                "name": "Azrael", "session": "codex-azrael", "status": "active",
+                "name": "Azrael", "session": "hermes", "status": "active",
                 "model": "test-model", "project": "AdVanced OS",
             }]
         }), encoding="utf-8")
@@ -69,9 +71,35 @@ class MissionControlTests(unittest.TestCase):
         self.assertEqual(registry["providers"][0]["counts"], {"total": 1, "online": 1, "active": 1})
         self.assertFalse(registry["demo_recommended"])
 
+    def test_production_registry_maps_azrael_to_primary_hermes(self):
+        registry = json.loads((ROOT / "config" / "providers.json").read_text(encoding="utf-8"))
+        azrael = next(agent for agent in registry["agents"] if agent["name"] == "Azrael")
+        self.assertEqual(azrael["id"], "azrael")
+        self.assertEqual(azrael["provider_id"], "hermes")
+        self.assertEqual(azrael["session"], "hermes")
+        self.assertEqual(azrael["model"], "DeepSeek V4 Flash")
+        self.assertEqual(azrael["restart_command"][0], "hermes")
+
+    def test_providers_endpoint_serves_registered_agents(self):
+        server = mission_control.ThreadingHTTPServer(("127.0.0.1", 0), mission_control.Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{server.server_port}/api/providers", timeout=2
+            ) as response:
+                registry = json.load(response)
+            self.assertEqual(response.status, 200)
+            self.assertEqual(registry["agents"][0]["id"], "azrael")
+            self.assertEqual(registry["agents"][0]["provider_id"], "hermes")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_structured_order_is_persisted_for_the_serial_consumer(self):
         code, response = mission_control.create_dispatch(json.dumps({
-            "agent": "codex-azrael",
+            "agent": "azrael",
             "title": "Reinforce the ward",
             "repository": "Kev1112005/AdVanced-OS",
             "branch": "agent/ward",
@@ -82,25 +110,25 @@ class MissionControlTests(unittest.TestCase):
         }).encode())
         self.assertEqual(code, 200)
         request = json.loads((self.paths["requests"] / f"{response['request_id']}.json").read_text())
-        self.assertEqual(request["agent"], "codex-azrael")
-        self.assertEqual(request["provider_id"], "codex")
+        self.assertEqual(request["agent"], "hermes")
+        self.assertEqual(request["provider_id"], "hermes")
         self.assertIn("# Reinforce the ward", request["task"])
         self.assertIn("- Tests pass", request["task"])
 
     def test_paused_agent_rejects_new_orders(self):
         code, _ = mission_control.control_agent(json.dumps({
-            "agent": "codex-azrael", "action": "pause",
+            "agent": "azrael", "action": "pause",
         }).encode())
         self.assertEqual(code, 200)
         code, response = mission_control.create_dispatch(json.dumps({
-            "agent": "codex-azrael", "title": "Held order", "prompt": "Do not deliver yet.",
+            "agent": "azrael", "title": "Held order", "prompt": "Do not deliver yet.",
         }).encode())
         self.assertEqual(code, 409)
         self.assertIn("paused", response["error"])
 
     def test_cancel_removes_only_the_target_order(self):
         code, created = mission_control.create_dispatch(json.dumps({
-            "agent": "codex-azrael", "title": "Withdraw me", "prompt": "Temporary task.",
+            "agent": "azrael", "title": "Withdraw me", "prompt": "Temporary task.",
         }).encode())
         self.assertEqual(code, 200)
         code, response = mission_control.cancel_dispatch(json.dumps({
@@ -126,7 +154,7 @@ class MissionControlTests(unittest.TestCase):
         self.assertTrue(self.paths["stop"].exists())
 
         code, response = mission_control.create_dispatch(json.dumps({
-            "agent": "codex-azrael", "title": "Blocked order", "prompt": "Remain queued.",
+            "agent": "azrael", "title": "Blocked order", "prompt": "Remain queued.",
         }).encode())
         self.assertEqual(code, 423)
         self.assertIn("sealed", response["error"])
