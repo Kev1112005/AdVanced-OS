@@ -42,6 +42,12 @@ alone is never approval.
 7. Do not run deployment commands. This skill records Kevin’s decision only. The
    separate deployment pipeline must call `check --id ID` and may proceed only
    when it exits 0.
+8. **Escalation default (Decision 010, tiered autonomy):** if a Tier 2 request has
+   been pending more than 4 hours, do not block the pipeline and do not nag.
+   Defer it to the next Monday docket (the docket-prep script surfaces queued
+   requests with age). Never auto-approve; never drop the request. A pending
+   request is reported on the docket until Kevin decides or the requester
+   retracts it.
 
 ## Response Format
 
