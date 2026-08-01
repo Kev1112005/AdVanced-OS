@@ -66,7 +66,7 @@ AdVanced OS is a **Hermes-based Agentic Operating System**. The orchestrator is 
 2. **Global stop flag must persist to disk, not memory** — watchdog restarts would silently un-pause
 3. **Cooperative halt** — kill must let the current commit finish before hard-stopping
 4. **Depth counter on correlation ID** — prevents runaway dispatch chains across the async file boundary
-5. **Kevin is always the top of the architecture** — no autonomous deploy, no autonomous cron mutation, no autonomous spending beyond cap
+5. **Kevin is the top of the architecture** — tiered autonomy per Decision 010 (Tier 0/1 bounded auto, Tier 2 always human-gated); global stop overrides all
 
 ## Key Contacts
 

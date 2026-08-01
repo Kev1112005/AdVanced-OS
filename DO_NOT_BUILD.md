@@ -11,7 +11,7 @@
 | **Formal tracing DB** | Correlation ID + grep is sufficient for one-person system. | UUID column in existing logs (Phase 1b). Structured event log (Phase 5a). |
 | **AIOS / Agno / LangGraph** | In-process frameworks that own the LLM loop. Claude Code is a closed CLI. | Tmux + cron + shell. |
 | **Graceful degradation framework** | Single Docker host = no HA. Alert + back off is the correct response. | `if X down: alert Kevin + back off` |
-| **Deploy Go/No-Go automation** | Kevin should approve every deploy. | Clear Discord approval UX (Phase 3). |
+| **UNBOUNDED deploy go/no-go automation** | Full autonomy with no gates is off-limits. | Bounded tiered autonomy per Decision 010 — Tier 0/1 auto, Tier 2 human-gated, deterministic boundaries. |
 | **Self-improvement loop** | Produces references Kevin hand-filters anyway. Automated dedup/pruning generates noise. | Compound learning file (Phase 5d) — machine-writeable, human-curated. Same value, zero noise. |
 | **Subagent/profile spawning CLI** | Only the default profile exists. Not enough diversity to need a creation tool. | Manual `hermes setup` for new profiles until count exceeds 5. |
 | **Rubric-driven LLM grader (Outcomes)** | Using a separate LLM to grade output is expensive and introduces model bias. | Phase 5e — Hermes checks concrete success criteria with shell commands. Cheaper, faster, bias-free. |

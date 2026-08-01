@@ -7,10 +7,10 @@
 ## Core Design Rules
 
 1. **Hermes does not write production code** — that's the worker's job, via task docs
-2. **Workers do not trigger deploys, cron changes, or state mutations** — those are Hermes's job, behind Kevin's approval
+2. **Workers do not trigger deploys, cron changes, or state mutations** — those are Hermes's job, behind Kevin's approval (tiered per Decision 010 — Tier 0/1 auto for bounded classes, Tier 2 always gated)
 3. **No synchronous callbacks across the dispatch channel** — async request files only
 4. **Small, idempotent, frequently-committed tasks** — the only reliable disaster recovery
-5. **Kevin is the top of the architecture** — every significant decision, deploy, or mutation routes to Discord for approval
+5. **Kevin is the top of the architecture** — tiered autonomy per Decision 010; global stop overrides all tiers
 
 ## Current Status
 
@@ -24,6 +24,7 @@
 | Phase 1a | Complete | Async request/notification bridge and serial dispatch consumer implemented |
 | Phase 5 | Operational | Alerting/backoff, QA delivery gate, compound learnings, and report-only ticket intake feed Mission Control |
 | Phase 5f | Deferred stretch | Existing profiles remain manually configured; add more tool-scoped profiles only when worker diversity warrants it |
+| Phase 6 | In progress | Tiered autonomy (Decision 010): daily branch sweep, Monday docket, approval-latency tier feedback |
 
 ## Interface Architecture
 
