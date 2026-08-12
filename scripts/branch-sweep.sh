@@ -92,6 +92,31 @@ tier2() {  # $1=repo $2=branch
   git -C "$1" diff --name-only "$base" "$2" 2>/dev/null | grep -Eqi "$TIER2_RE"
 }
 
+# True when a branch adds no new content to main.
+#
+# Ancestry cannot answer this: a squash-merge rewrites the branch's commits into
+# one new commit, so the originals stay unreachable from main and
+# `rev-list origin/main..$branch` reports them as unique forever. That is how
+# ObsoleteBot #499/#503 got duplicate PRs opened for work merged days earlier as
+# #483/#493 — both then failed to merge on conflicts with the drifted main.
+#
+# git cherry compares patch-ids instead, marking a commit '-' when an equivalent
+# diff is already upstream and '+' when it is genuinely new. Checked against the
+# remote ref too when one exists, because `gh pr create --head` proposes the
+# remote branch, not the local one, and the two can diverge. Merged means neither
+# side has unique content — on any doubt (missing ref, failed git call) we report
+# not-merged, so the caller pings instead of deleting.
+already_merged() {  # $1=repo $2=branch
+  local ref out checked=0
+  for ref in "$2" "refs/remotes/origin/$2"; do
+    git -C "$1" rev-parse --verify --quiet "$ref" >/dev/null || continue
+    out="$(git -C "$1" cherry origin/main "$ref" 2>/dev/null)" || return 1
+    [[ -z "$(grep '^+' <<< "$out")" ]] || return 1
+    checked=$(( checked + 1 ))
+  done
+  (( checked > 0 ))  # a branch we could not resolve is never "verified merged"
+}
+
 open_pr() {  # $1=repo $2=branch -> PR number on stdout, empty if none
   gh pr list --repo "$1" --head "$2" --state open --json number \
     --jq '.[0].number // empty' 2>/dev/null || true
@@ -142,8 +167,8 @@ sweep_repo() {
     age="$(days "$head_ts")"
 
     if (( age >= 28 )); then
-      # Ancestry is a lie after a squash-merge: ask what commits are unique, not what merged.
-      if [[ "$(git -C "$repo" rev-list --count "origin/main..$branch" 2>/dev/null || echo 1)" == "0" ]]; then
+      # Ancestry is a lie after a squash-merge: ask what content is unique, not what merged.
+      if already_merged "$repo" "$branch"; then
         [[ -n "$wt" ]] && run git -C "$repo" worktree remove --force "$wt"
         run git -C "$repo" branch -D "$branch"
         say "$(past 'would delete' 'deleted') verified-merged branch $slug:$branch (idle ${age}d)"
@@ -171,12 +196,34 @@ sweep_repo() {
     fi
 
     if (( age >= 3 )); then
+      # A branch whose content is already in main is merged, however it got there.
+      # Don't open a PR for it: gh pr create --fill fails with "could not find any
+      # commits" when the branch is strictly empty, and a squash-merged branch
+      # produces a duplicate PR that then conflicts against the drifted main.
+      # BUT: never delete a worktree with uncommitted changes — that's live work.
+      if already_merged "$repo" "$branch"; then
+        if [[ -n "$wt" ]] && ! git -C "$wt" diff --quiet 2>/dev/null; then
+          say "MANUAL: branch $slug:$branch appears merged but worktree has uncommitted changes — do not touch"
+          continue
+        fi
+        [[ -n "$wt" ]] && run git -C "$repo" worktree remove --force "$wt"
+        run git -C "$repo" branch -D "$branch"
+        say "$(past 'would delete' 'deleted') verified-merged branch $slug:$branch (idle ${age}d)"
+        continue
+      fi
       if tier2 "$repo" "$branch"; then
         say "Tier 2 branch $slug:$branch idle 3d — deferred to docket"
         continue
       fi
       if [[ -z "$pr" ]]; then
-        run gh pr create --repo "$slug" --head "$branch" --base main --fill
+        # gh pr create --fill resolves git refs from the CURRENT directory, not
+        # the target repo. The cron runs this script from a non-repo cwd, so
+        # --fill fails with "could not compute title or body defaults". Compute
+        # title/body explicitly from the repo instead.
+        pr_title="$(git -C "$repo" log -1 --format=%s "$branch" 2>/dev/null || echo "sweep: $branch")"
+        pr_body="$(git -C "$repo" log -1 --format=%b "$branch" 2>/dev/null | head -20 || true)"
+        run gh pr create --repo "$slug" --head "$branch" --base main \
+          --title "$pr_title" --body "${pr_body:-Automated PR from branch-sweep (day-3 rule).}"
         pr="$(open_pr "$slug" "$branch")"
         # ponytail: bounded CI wait so a stuck check can't wedge the cron; next
         # sweep picks the PR up if the wait expires.
