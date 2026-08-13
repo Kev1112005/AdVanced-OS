@@ -70,8 +70,37 @@ stopped="$(HERMES_SWEEP_LOG="$TMP/sweep.log" HERMES_STOP_FILE="$TMP/stop" \
   bash "$SWEEP" --dry-run "$TMP/repo" 2>/dev/null)"
 [[ -z "$stopped" ]] || { echo "UNEXPECTED: output while global stop engaged"; fail=1; }
 
+# The day-3 rung reaches gh. Every branch here is local-only (the fixture pushes
+# main and nothing else), so the sweep must announce the push instead of handing
+# gh a branch it cannot see — the 2026-08-13 abort.
+has 'would push'
+has 'unpushed branch'
+
+# Failure isolation: with every gh call failing, a live pass must still complete.
+# Stubbed rather than real so the test stays offline and deterministic.
+mkdir -p "$TMP/bin"
+cat > "$TMP/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+echo "GraphQL: Head sha can't be blank, Head ref must be a branch" >&2
+exit 1
+STUB
+chmod +x "$TMP/bin/gh"
+
+live="$(PATH="$TMP/bin:$PATH" HERMES_SWEEP_LOG="$TMP/live.log" HERMES_STOP_FILE="$TMP/no-stop" \
+  bash "$SWEEP" "$TMP/repo" 2>/dev/null)" && live_rc=0 || live_rc=$?
+
+[[ "$live_rc" == 0 ]] || { echo "UNEXPECTED: live pass exited $live_rc, expected 0"; fail=1; }
+grep -q 'FAILED: ' <<< "$live" || { echo "MISSING: a FAILED line for the stubbed gh"; fail=1; }
+
+# The real bug: one rejected action killed everything after it. Assert the pass
+# reached branches on both sides of the failing day-3 rung.
+for b in idle-2d idle-8d tier0-5d; do
+  grep -q "$b" <<< "$live" || { echo "MISSING: $b — pass aborted early"; fail=1; }
+done
+
 if (( fail )); then
   echo "--- actual output ---"; echo "$out"
+  echo "--- live output ---"; echo "$live"
   echo "FAIL"; exit 1
 fi
 echo "PASS"
