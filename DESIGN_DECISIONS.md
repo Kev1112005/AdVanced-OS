@@ -112,7 +112,10 @@ at human review. See [Decision 009](docs/decisions/009-phase5-delivery-contract.
 
 ### Decision: GUI Is the Primary Interface and Local Control Surface
 
-**Chosen:** Mission Control GUI for awareness and trusted local control (dispatch, follow-up, pause, interrupt, restart, deploy decisions, and global stop). Discord CLI remains the complementary remote control surface.
+**Chosen:** Mission Control GUI for awareness and trusted local control
+(dispatch, follow-up, pause, restart, deploy decisions, and global stop).
+Direct interruption remains unavailable until it can honor the cooperative-halt
+rule. Discord CLI remains the complementary remote control surface.
 
 **Rationale:** An operating system without a visible interface isn't an OS — it's a backend. The GUI provides at-a-glance awareness and direct operator actions while the operator is at the host. The Discord CLI remains useful on mobile and for actions faster by conversation. Both use the same durable queue and disk-backed safety state.
 

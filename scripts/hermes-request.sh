@@ -91,6 +91,11 @@ try:
     f.flush()
     os.fsync(f.fileno())
   os.replace(temporary, destination)
+  descriptor = os.open(os.path.dirname(destination), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+  try:
+    os.fsync(descriptor)
+  finally:
+    os.close(descriptor)
 finally:
   try:
     os.unlink(temporary)

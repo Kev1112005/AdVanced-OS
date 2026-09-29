@@ -81,7 +81,7 @@ AdVanced OS is the infrastructure layer that gives AI agents persistent memory, 
 | Agent status snapshot (JSON endpoint for GUI) | Implemented | Phase 3 |
 | Discord approval UX (deploy summaries, confirm-before-deploy) | Implemented | Phase 4 |
 | Async shell bridge (hermes-request, hermes-notify) | Implemented | Phase 1a |
-| Production hardening (targeted alerts and backoff) | Operational | Phase 5 |
+| Production hardening (persistent serial lane, fail-closed delivery, targeted alerts) | Operational | Phase 5 |
 | Hermes-run QA gate (success criteria verification) | Implemented | Phase 5e |
 | Compound learning file (cross-session pattern accumulation) | Implemented | Phase 5d |
 | Tool-scoped worker profiles (research/code-review/general) | Stretch | Phase 5f |
@@ -139,8 +139,10 @@ Install the Phase 5 runtime hooks and initialize the ticket/learning surfaces:
 ./scripts/phase5-setup.sh status
 ```
 
-The dashboard then exposes QA runs, async tickets, and compound learnings in the
-Phase V Operations panel. See the
+The dashboard then exposes durable order history, QA runs, async tickets, and
+compound learnings in the Phase V Operations panel. Worker delivery is guarded
+by a non-expiring disk-backed serial lane; inspect it with
+`~/.hermes/scripts/dispatch-lane.sh status`. See the
 [Phase 5 operations guide](docs/setup/phase5-operations.md).
 
 ## Deployment Approval

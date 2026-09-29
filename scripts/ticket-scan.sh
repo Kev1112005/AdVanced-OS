@@ -127,6 +127,13 @@ def atomic_text(path, text):
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
+        descriptor = os.open(
+            path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        )
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
     finally:
         try:
             os.unlink(temp_name)

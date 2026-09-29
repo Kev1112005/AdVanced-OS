@@ -20,6 +20,7 @@ CB_CONFIG="${HERMES_CIRCUIT_BREAKER_CONFIG:-$SCRIPT_DIR/../config/circuit-breake
 SUBMIT_DELAY="${HERMES_DISPATCH_SUBMIT_DELAY:-5}"
 TRANSPORT_TIMEOUT="${HERMES_DISPATCH_TRANSPORT_TIMEOUT:-5}"
 TASK_FILE_DIR="${HERMES_DISPATCH_TASK_DIR:-$HOME/.hermes/dispatch-tasks}"
+TASK_RUN_DIR="${HERMES_TASK_RUN_DIR:-$HOME/.hermes/task-runs}"
 
 [[ "$SUBMIT_DELAY" =~ ^[0-9]+([.][0-9]+)?$ ]] || SUBMIT_DELAY=5
 [[ "$TRANSPORT_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || TRANSPORT_TIMEOUT=5
@@ -73,12 +74,52 @@ notify_line() {
     "${3//[|$'\n\r']/ }" >> "$NOTIF_LOG"
 }
 
+fsync_directory() {
+  python3 - "$1" <<'PY'
+import os
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+if path.is_dir():
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+PY
+}
+
+durable_remove() {
+  local path directory
+  for path in "$@"; do
+    directory="$(dirname "$path")"
+    if [[ -e "$path" || -L "$path" ]]; then
+      rm -f -- "$path"
+      fsync_directory "$directory"
+    fi
+  done
+}
+
+durable_move() {
+  local source="$1" destination="$2"
+  local source_directory destination_directory
+  source_directory="$(dirname "$source")"
+  destination_directory="$(dirname "$destination")"
+  mv -f -- "$source" "$destination"
+  fsync_directory "$destination_directory"
+  if [[ "$source_directory" != "$destination_directory" ]]; then
+    fsync_directory "$source_directory"
+  fi
+}
+
 atomic_line() {
   local path="$1" value="$2" temporary
   mkdir -p "$(dirname "$path")"
   temporary="$(mktemp "${path}.tmp.XXXXXX")"
   printf '%s\n' "$value" > "$temporary"
   mv -f "$temporary" "$path"
+  fsync_directory "$(dirname "$path")"
 }
 
 # Ezekiel is on-demand. Starting the profile is not task delivery; the lane is
@@ -181,11 +222,136 @@ PY
   PARSED_PRIORITY="${values[9]}"
 }
 
+qa_terminal_status() {
+  python3 - "$TASK_RUN_DIR" "$1" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+task_dir = pathlib.Path(sys.argv[1]) / sys.argv[2]
+request_path = task_dir / "request.json"
+result_path = task_dir / "result.json"
+state_path = task_dir / "state.json"
+if (
+    not request_path.is_file()
+    or request_path.is_symlink()
+    or not result_path.is_file()
+    or result_path.is_symlink()
+    or not state_path.is_file()
+    or state_path.is_symlink()
+):
+    raise SystemExit(2)
+try:
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    raise SystemExit(2)
+
+
+def contract_hash(value):
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+status = str(result.get("status") or "")
+request_hash = contract_hash(request)
+if (
+    request.get("request_id") != sys.argv[2]
+    or result.get("request_id") != sys.argv[2]
+    or status not in {"qa_pass", "qa_fail"}
+    or state.get("request_id") != sys.argv[2]
+    or state.get("status") != status
+    or state.get("request_sha256") != request_hash
+    or result.get("request_sha256") != request_hash
+    or result.get("source_status") not in {"dispatched", "dispatch_uncertain"}
+):
+    raise SystemExit(2)
+print(status)
+PY
+}
+
+durable_remove_matching_contract() {
+  python3 - "$TASK_RUN_DIR" "$1" "$2" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import sys
+
+task_request_path = pathlib.Path(sys.argv[1]) / sys.argv[2] / "request.json"
+candidate_path = pathlib.Path(sys.argv[3])
+if not candidate_path.exists() and not candidate_path.is_symlink():
+    raise SystemExit(0)
+if (
+    not task_request_path.is_file()
+    or task_request_path.is_symlink()
+    or not candidate_path.is_file()
+    or candidate_path.is_symlink()
+):
+    raise SystemExit(2)
+
+
+def load(path):
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("request is not an object")
+    return value
+
+
+def contract_hash(value):
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+try:
+    task_request = load(task_request_path)
+    candidate = load(candidate_path)
+except (OSError, ValueError):
+    raise SystemExit(2)
+if (
+    task_request.get("request_id") != sys.argv[2]
+    or candidate.get("request_id") != sys.argv[2]
+    or contract_hash(candidate) != contract_hash(task_request)
+):
+    raise SystemExit(2)
+candidate_path.unlink()
+descriptor = os.open(
+    candidate_path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
+}
+
+cleanup_terminal_artifacts() {
+  local qa_id="$1" completion_file="$2" completion_id="$3"
+  local clean=0
+  durable_remove_matching_contract "$qa_id" "$REQ_DIR/$qa_id.json" || clean=1
+  durable_remove_matching_contract "$qa_id" "$UNCERTAIN_DIR/$qa_id.json" || clean=1
+  durable_remove "$completion_file" "$RETRY_DIR/qa-$completion_id" \
+    "$RETRY_DIR/qa-lane-$completion_id" "$RETRY_DIR/qa-release-$completion_id"
+  return "$clean"
+}
+
 quarantine_invalid() {
   local request_file="$1" detail="$2" destination
   mkdir -p "$INVALID_DIR"
   destination="$INVALID_DIR/$(basename "$request_file").$(date +%s).$$"
-  mv -f "$request_file" "$destination"
+  durable_move "$request_file" "$destination"
   log_event "invalid:0" fail dispatch-consumer \
     "quarantined $(basename "$request_file"): ${detail:0:200}"
   notify_line warn dispatch-consumer \
@@ -239,7 +405,7 @@ mark_uncertain() {
   if [[ -e "$destination" ]]; then
     destination="$destination.$(date +%s).$$"
   fi
-  mv -f "$request_file" "$destination" 2>/dev/null || true
+  durable_move "$request_file" "$destination" 2>/dev/null || true
   log_event "$cid" fail "$agent" "dispatch uncertain: ${detail:0:180}"
   notify_line alert dispatch-consumer \
     "Dispatch uncertain for $request_id on $agent; lane remains closed for inspection."
@@ -326,23 +492,77 @@ for index in "${ordered[@]}"; do
       quarantine_invalid "$request_file" "qa task is not a valid request id"
       continue
     fi
+    if ! qa_lane_status="$(bash "$SCRIPT_DIR/dispatch-lane.sh" completion-status \
+      --request-id "$qa_id" 2>&1)"; then
+      qa_terminal=""
+      if [[ ! -e "$LANE_FILE" && ! -L "$LANE_FILE" ]]; then
+        qa_terminal="$(qa_terminal_status "$qa_id" 2>/dev/null || true)"
+      fi
+      if [[ "$qa_terminal" == qa_pass || "$qa_terminal" == qa_fail ]]; then
+        if cleanup_terminal_artifacts "$qa_id" "$request_file" "$request_id"; then
+          log_event "$cid" "$qa_terminal" "$agent" \
+            "reconciled stale completion after terminal lane release for $qa_id"
+          notify_line info qa-gate \
+            "Recovered terminal QA cleanup for $qa_id after an interrupted release."
+        else
+          log_event "$cid" qa_fail "$agent" \
+            "reconciled completion for $qa_id; mismatched delivery artifact retained"
+          notify_line warn qa-gate \
+            "Recovered QA completion for $qa_id, but a mismatched delivery artifact remains."
+        fi
+        continue
+      fi
+      marker="$RETRY_DIR/qa-lane-$request_id"
+      if [[ ! -f "$marker" ]]; then
+        mkdir -p "$RETRY_DIR"
+        touch "$marker"
+        log_event "$cid" qa_fail "$agent" \
+          "QA completion held for $qa_id: $(echo "$qa_lane_status" | tail -c 160)"
+        notify_line warn qa-gate \
+          "QA completion for $qa_id has no matching active delivery lane; held for inspection."
+      fi
+      continue
+    fi
+    qa_allow_uncertain=0
+    [[ "$qa_lane_status" == uncertain ]] && qa_allow_uncertain=1
     set +e
-    qa_output="$(bash "$SCRIPT_DIR/qa-gate.sh" run \
+    qa_output="$(HERMES_QA_ALLOW_UNCERTAIN="$qa_allow_uncertain" \
+      bash "$SCRIPT_DIR/qa-gate.sh" run \
       --request-id "$qa_id" --completion-file "$request_file" 2>&1)"
     qa_code=$?
     set -e
+    qa_terminal=""
     if (( qa_code == 0 || qa_code == 1 )); then
-      if (( qa_code == 0 )); then
+      qa_terminal="$(qa_terminal_status "$qa_id" 2>/dev/null || true)"
+    fi
+    if [[ "$qa_terminal" == qa_pass || "$qa_terminal" == qa_fail ]]; then
+      if [[ "$qa_terminal" == qa_pass ]]; then
         log_event "$cid" qa_pass "$agent" "QA passed for $qa_id"
         notify_line info qa-gate "QA passed for $qa_id"
       else
         log_event "$cid" qa_fail "$agent" "QA failed for $qa_id"
         notify_line warn qa-gate "QA failed for $qa_id; review Mission Control"
       fi
-      bash "$SCRIPT_DIR/dispatch-lane.sh" release --request-id "$qa_id" \
-        --reason qa_terminal >/dev/null 2>&1 || true
-      rm -f "$REQ_DIR/$qa_id.json" "$UNCERTAIN_DIR/$qa_id.json"
-      rm -f "$request_file" "$RETRY_DIR/qa-$request_id"
+      if bash "$SCRIPT_DIR/dispatch-lane.sh" release --request-id "$qa_id" \
+        --reason qa_terminal >/dev/null 2>&1; then
+        if ! cleanup_terminal_artifacts \
+          "$qa_id" "$request_file" "$request_id"; then
+          log_event "$cid" qa_fail "$agent" \
+            "terminal QA cleaned; mismatched delivery artifact retained for $qa_id"
+          notify_line warn qa-gate \
+            "QA finished for $qa_id, but a mismatched delivery artifact remains."
+        fi
+      else
+        marker="$RETRY_DIR/qa-release-$request_id"
+        if [[ ! -f "$marker" ]]; then
+          mkdir -p "$RETRY_DIR"
+          touch "$marker"
+          log_event "$cid" qa_fail "$agent" \
+            "QA terminal result recorded, but exact lane release failed for $qa_id"
+          notify_line alert qa-gate \
+            "QA finished for $qa_id but its lane could not be released; completion retained."
+        fi
+      fi
     else
       marker="$RETRY_DIR/qa-$request_id"
       if [[ ! -f "$marker" ]]; then
@@ -361,7 +581,7 @@ for index in "${ordered[@]}"; do
     || "$request_type" == log ]]; then
     notify_line info "$agent" "$task"
     log_event "$cid" "$request_type" "$agent" "$(echo "$task" | head -c 100)"
-    rm -f "$request_file"
+    durable_remove "$request_file"
     continue
   fi
 
@@ -388,7 +608,7 @@ for index in "${ordered[@]}"; do
 
   # An occupied or corrupt lane is fail-closed. Completion records elsewhere in
   # this same poll may release it before a later worker request is considered.
-  if [[ -e "$LANE_FILE" ]]; then
+  if [[ -e "$LANE_FILE" || -L "$LANE_FILE" ]]; then
     continue
   fi
 
@@ -442,6 +662,7 @@ for index in "${ordered[@]}"; do
   fi
 
   send_text="$task"
+  task_file=""
   if (( ${#task} >= 2000 )); then
     mkdir -p "$TASK_FILE_DIR"
     chmod 700 "$TASK_FILE_DIR"
@@ -454,18 +675,41 @@ for index in "${ordered[@]}"; do
       log_event "$cid" fail "$agent" "could not persist large dispatch task file"
       continue
     fi
+    fsync_directory "$TASK_FILE_DIR"
     chmod 600 "$task_file"
     send_text="Implement the task in $task_file. Read it first, build it. Go."
+  fi
+
+  # Registration and task-file persistence can take long enough for stop/cost
+  # state to change. Re-run the complete breaker at the final pre-send boundary.
+  set +e
+  breaker_output="$(bash "$SCRIPT_DIR/circuit-breaker.sh" check \
+    --correlation-id "$cid" --config "$CB_CONFIG" 2>&1)"
+  breaker_code=$?
+  set -e
+  if (( breaker_code != 0 )); then
+    marker="$RETRY_DIR/breaker-$request_id-$breaker_code"
+    if [[ ! -f "$marker" ]]; then
+      mkdir -p "$RETRY_DIR"
+      touch "$marker"
+      log_event "$cid" circuit_break "$agent" \
+        "pre-send blocked by circuit breaker ($breaker_code): $(echo "$breaker_output" | tail -c 140)"
+    fi
+    [[ -z "$task_file" ]] || durable_remove "$task_file"
+    bash "$SCRIPT_DIR/dispatch-lane.sh" release --request-id "$request_id" \
+      --reason preflight_failed >/dev/null 2>&1 || true
+    continue
   fi
 
   if ! bash "$SCRIPT_DIR/dispatch-lane.sh" transition --request-id "$request_id" \
     --status submitting >/dev/null 2>&1; then
     bash "$SCRIPT_DIR/dispatch-lane.sh" release --request-id "$request_id" \
       --reason preflight_failed >/dev/null 2>&1 || true
+    [[ -z "$task_file" ]] || durable_remove "$task_file"
     continue
   fi
 
-  if ! timeout "$TRANSPORT_TIMEOUT" tmux send-keys -t "$agent" "$send_text"; then
+  if ! timeout "$TRANSPORT_TIMEOUT" tmux send-keys -t "$agent" -l -- "$send_text"; then
     mark_uncertain "$request_file" "$request_id" "$cid" "$agent" \
       "task text transport failed" "$requires_qa" "$request_type" "$pipeline_id"
     continue
@@ -507,7 +751,8 @@ for index in "${ordered[@]}"; do
 
   log_event "$cid" dispatch "$agent" "$(echo "$task" | head -c 100)"
   reset_dispatch_failure "$agent"
-  rm -f "$request_file" "$RETRY_DIR/unsupported-$request_id"
+  durable_remove "$request_file"
+  rm -f "$RETRY_DIR/unsupported-$request_id"
 done
 
 # Housekeeping is independent of queue depth.

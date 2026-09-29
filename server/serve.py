@@ -28,12 +28,15 @@ import mimetypes
 import os
 import re
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from collections import deque
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -46,8 +49,9 @@ from deployment_approval import (  # noqa: E402
     ApprovalStateError,
     InvalidDeploymentId,
     MissingRequest,
-    list_pending,
+    deployment_status,
     record_decision,
+    validate_deployment_id,
 )
 
 HOME = os.path.expanduser("~")
@@ -73,6 +77,9 @@ LEARNINGS_LOCK = os.environ.get(
 STOP_FILE = os.environ.get("HERMES_STOP_FILE", f"{HOME}/.hermes/stop")
 DISPATCH_LOCK = os.environ.get(
     "HERMES_DISPATCH_LOCK", f"{HOME}/.hermes/dispatch-consumer.lock"
+)
+STOP_LOCK = os.environ.get(
+    "HERMES_STOP_LOCK", f"{HOME}/.hermes/global-stop.lock"
 )
 # CAP = float(os.environ.get("HERMES_WEEKLY_CAP", "20.0"))  # cost tracking disabled
 PORT = int(os.environ.get("MISSION_CONTROL_PORT", "3001"))
@@ -122,6 +129,8 @@ ALLOWED_ORIGINS = {
 }
 
 START = time.time()
+_SESSION_LOCKS = {}
+_SESSION_LOCKS_GUARD = threading.Lock()
 
 
 def read_json(path, fallback=None):
@@ -145,6 +154,10 @@ class InvalidJsonBody(ValueError):
 
 class InvalidQueryParameter(ValueError):
     """A query parameter is not an integer inside its endpoint's safe bounds."""
+
+
+class StaleTicketReview(ValueError):
+    """The reviewed ticket changed after the operator loaded it."""
 
 
 def parse_json_object(body):
@@ -180,6 +193,31 @@ def _safe_text(value, default=""):
     return value if isinstance(value, str) else default
 
 
+def normalize_acceptance_criteria(value):
+    """Validate and normalize a bounded flat list of human-readable criteria."""
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        criteria = [
+            line.strip(" -") for line in value.splitlines() if line.strip(" -")
+        ]
+    elif isinstance(value, list):
+        if any(not isinstance(item, str) for item in value):
+            raise ValueError(
+                "acceptance_criteria must be a string or a flat list of strings"
+            )
+        criteria = [item.strip() for item in value if item.strip()]
+    else:
+        raise ValueError(
+            "acceptance_criteria must be a string or a flat list of strings"
+        )
+    if len(criteria) > 50:
+        raise ValueError("acceptance_criteria may contain at most 50 items")
+    if any(len(item) > 1000 for item in criteria):
+        raise ValueError("acceptance criterion exceeds 1000 characters")
+    return criteria
+
+
 def _stop_file():
     """Honor runtime test/service overrides without relying on a stale snapshot."""
     return os.environ.get("HERMES_STOP_FILE", STOP_FILE)
@@ -191,6 +229,81 @@ def _dispatch_lock_file():
         or os.environ.get("HERMES_DISPATCH_CONSUMER_LOCK")
         or DISPATCH_LOCK
     )
+
+
+def _stop_lock_file():
+    return os.environ.get("HERMES_STOP_LOCK", STOP_LOCK)
+
+
+def fsync_directory(path):
+    """Persist a material directory entry change before reporting success."""
+    directory = path or "."
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def global_stop_state():
+    """Return fail-closed state for the exact configured stop-file node."""
+    path = _stop_file()
+    try:
+        node = os.lstat(path)
+    except FileNotFoundError:
+        return {"stopped": False, "valid": True, "path": path, "error": ""}
+    except OSError as exc:
+        return {
+            "stopped": True,
+            "valid": False,
+            "path": path,
+            "error": f"global stop state is unreadable: {exc}",
+        }
+    if not stat.S_ISREG(node.st_mode):
+        return {
+            "stopped": True,
+            "valid": False,
+            "path": path,
+            "error": "global stop path is not a regular file",
+        }
+    return {"stopped": True, "valid": True, "path": path, "error": ""}
+
+
+@contextmanager
+def locked_state_file(path):
+    """Serialize a cross-thread/process state transition through one lock inode."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def session_operation_lock(session):
+    """Return the stable in-process lock for one canonical tmux session."""
+    with _SESSION_LOCKS_GUARD:
+        return _SESSION_LOCKS.setdefault(session, threading.Lock())
+
+
+def append_event_best_effort(correlation_id, event, agent, detail=""):
+    """Record telemetry without changing an already-committed operation outcome."""
+    try:
+        append_event(correlation_id, event, agent, detail)
+        return ""
+    except (OSError, UnicodeError) as exc:
+        warning = f"state changed but event telemetry failed: {exc}"
+        sys.stderr.write(f"warning: {warning}\n")
+        sys.stderr.flush()
+        return warning
+
+
+def response_with_warning(payload, warning):
+    if warning:
+        payload = dict(payload)
+        payload["warning"] = warning
+    return payload
 
 
 def atomic_json_write(path, value):
@@ -208,6 +321,29 @@ def atomic_json_write(path, value):
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary, path)
+        fsync_directory(directory or ".")
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def atomic_bytes_write(path, value):
+    """Atomically restore exact previously durable bytes."""
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{os.path.basename(path)}.", dir=directory or "."
+    )
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(value)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, path)
+        fsync_directory(directory or ".")
     finally:
         try:
             os.unlink(temporary)
@@ -570,8 +706,12 @@ def create_dispatch(body):
         return 400, {"error": f"unknown registry agent '{agent_key}'"}
     if agent.get("paused"):
         return 409, {"error": f"{agent.get('name')} is paused; resume the agent before issuing a new order"}
-    if os.path.isfile(_stop_file()):
-        return 423, {"error": "The Rock is sealed; clear the global stop before issuing orders"}
+    stop_state = global_stop_state()
+    if stop_state["stopped"]:
+        error = "The Rock is sealed; clear the global stop before issuing orders"
+        if not stop_state["valid"]:
+            error = f"{error} ({stop_state['error']})"
+        return 423, {"error": error, "global_stop_valid": stop_state["valid"]}
     priority = str(data.get("priority", "normal")).strip() or "normal"
     if priority not in ("low", "normal", "high", "critical"):
         return 400, {"error": "priority must be low, normal, high, or critical"}
@@ -592,6 +732,11 @@ def create_dispatch(body):
     required_files = [str(path).strip() for path in required_files if str(path).strip()]
     if any(len(path) > 500 for path in required_files):
         return 400, {"error": "required file path exceeds 500 characters"}
+    try:
+        criteria = normalize_acceptance_criteria(data.get("acceptance_criteria"))
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    data = {**data, "acceptance_criteria": criteria}
 
     rid = str(uuid.uuid4())
     # ponytail: correlation-id.sh emits exactly "<uuid>:0" for a root dispatch;
@@ -621,9 +766,6 @@ def create_dispatch(body):
         )
     task = f"{task}\n\n{delivery}"
 
-    criteria = data.get("acceptance_criteria") or []
-    if isinstance(criteria, str):
-        criteria = [line.strip(" -") for line in criteria.splitlines() if line.strip(" -")]
     branch = str(data.get("branch") or "").strip()
     qa_checks = []
     if qa_mode == "commit":
@@ -671,11 +813,18 @@ def create_dispatch(body):
             update_task_run_state(req, "queue_failed", "failed_at")
         except OSError:
             pass
-        append_event(cid, "fail", agent.get("id"), f"queue persistence failed: {error}")
+        append_event_best_effort(
+            cid, "fail", agent.get("id"), f"queue persistence failed: {error}"
+        )
         return 500, {"error": "order could not be persisted to the durable queue"}
-    append_event(cid, "queued", agent.get("id"), req["title"])
-    return 200, {"status": "queued", "request_id": rid, "correlation_id": cid,
-                 "agent": agent.get("id"), "provider": agent.get("provider_id")}
+    warning = append_event_best_effort(cid, "queued", agent.get("id"), req["title"])
+    return 200, response_with_warning({
+        "status": "queued",
+        "request_id": rid,
+        "correlation_id": cid,
+        "agent": agent.get("id"),
+        "provider": agent.get("provider_id"),
+    }, warning)
 
 
 def cancel_dispatch(body):
@@ -703,20 +852,81 @@ def cancel_dispatch(body):
             request = read_json_object(path)
             if not request or request.get("request_id") != request_id:
                 return 404, {"error": "queued order not found"}
+            tombstone = os.path.join(
+                REQ_DIR, f".cancel-{request_id}.{uuid.uuid4().hex}.json"
+            )
+            state_path = os.path.join(TASK_RUN_DIR, request_id, "state.json")
             try:
-                os.remove(path)
+                with open(state_path, "rb") as state_file:
+                    previous_state = state_file.read()
+            except FileNotFoundError:
+                previous_state = None
+            except OSError as exc:
+                return 500, {
+                    "error": f"order cancellation ledger is unavailable: {exc}"
+                }
+            try:
+                os.replace(path, tombstone)
+                fsync_directory(REQ_DIR)
             except FileNotFoundError:
                 return 409, {
                     "error": "the order was claimed by the serial consumer"
                 }
-            update_task_run_state(request, "cancelled", "cancelled_at")
-            append_event(
+            except OSError as exc:
+                if os.path.exists(tombstone):
+                    try:
+                        os.replace(tombstone, path)
+                        fsync_directory(REQ_DIR)
+                    except OSError:
+                        pass
+                return 500, {"error": f"order cancellation claim failed: {exc}"}
+            try:
+                update_task_run_state(request, "cancelled", "cancelled_at")
+            except (OSError, ValueError) as exc:
+                restore_errors = []
+                try:
+                    if previous_state is None:
+                        try:
+                            os.unlink(state_path)
+                            fsync_directory(os.path.dirname(state_path))
+                        except FileNotFoundError:
+                            pass
+                    else:
+                        atomic_bytes_write(state_path, previous_state)
+                except OSError as restore_exc:
+                    restore_errors.append(f"ledger restore failed: {restore_exc}")
+                try:
+                    os.replace(tombstone, path)
+                    fsync_directory(REQ_DIR)
+                except OSError as restore_exc:
+                    restore_errors.append(f"queue restore failed: {restore_exc}")
+                detail = "; ".join(restore_errors)
+                suffix = f" ({detail})" if detail else ""
+                return 500, {
+                    "error": f"order cancellation was rolled back: {exc}{suffix}"
+                }
+
+            cleanup_warning = ""
+            try:
+                os.unlink(tombstone)
+                fsync_directory(REQ_DIR)
+            except OSError as exc:
+                cleanup_warning = (
+                    f"order cancelled but tombstone cleanup failed: {exc}"
+                )
+            telemetry_warning = append_event_best_effort(
                 request.get("correlation_id"),
                 "cancel",
                 request.get("agent_id") or request.get("agent"),
                 request.get("title") or "queued order cancelled",
             )
-            return 200, {"status": "cancelled", "request_id": request_id}
+            warning = "; ".join(
+                item for item in (cleanup_warning, telemetry_warning) if item
+            )
+            return 200, response_with_warning(
+                {"status": "cancelled", "request_id": request_id},
+                warning,
+            )
     except OSError as exc:
         return 500, {"error": f"queued order could not be cancelled: {exc}"}
 
@@ -735,47 +945,121 @@ def control_agent(body):
     if action not in ("pause", "resume", "interrupt", "restart"):
         return 400, {"error": "action must be pause, resume, interrupt, or restart"}
 
-    os.makedirs(PAUSE_DIR, exist_ok=True)
-    pause_file = os.path.join(PAUSE_DIR, agent["id"])
-    cid = f"{uuid.uuid4()}:0"
-
-    if action == "pause":
-        with open(pause_file, "w", encoding="utf-8") as f:
-            f.write(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-        append_event(cid, "pause", agent["id"], "future orders held at the serial gate")
-        return 200, {"status": "paused", "agent": agent["id"]}
-    if action == "resume":
+    with session_operation_lock(session):
         try:
-            os.remove(pause_file)
-        except FileNotFoundError:
-            pass
-        append_event(cid, "resume", agent["id"], "serial gate reopened")
-        return 200, {"status": "resumed", "agent": agent["id"]}
-    if action == "interrupt":
-        if not _session_alive(session):
-            return 409, {"error": f"session '{session}' is not online"}
-        try:
-            subprocess.run(["tmux", "send-keys", "-t", session, "C-c"], timeout=5, check=True)
-        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return 500, {"error": f"interrupt failed: {exc}"}
-        append_event(cid, "cancel", agent["id"], "active task interrupted by operator")
-        return 200, {"status": "interrupted", "agent": agent["id"]}
+            os.makedirs(PAUSE_DIR, exist_ok=True)
+        except OSError as exc:
+            return 500, {"error": f"agent control state is unavailable: {exc}"}
+        pause_file = os.path.join(PAUSE_DIR, agent["id"])
+        cid = f"{uuid.uuid4()}:0"
 
-    command = agent.get("restart_command") or []
-    if not command:
-        return 409, {"error": "no restart command configured for this agent"}
-    if _session_alive(session):
-        return 409, {"error": f"session '{session}' is already online"}
-    directory = os.path.expanduser(agent.get("directory") or HOME)
-    if not os.path.isdir(directory):
-        return 409, {"error": f"registered working directory does not exist: {agent.get('directory')}"}
-    try:
-        subprocess.run(["tmux", "new-session", "-d", "-s", session, "-c", directory, *command],
-                       timeout=10, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return 500, {"error": f"restart failed: {exc}"}
-    append_event(cid, "start", agent["id"], "agent session restarted from provider registry")
-    return 200, {"status": "restarted", "agent": agent["id"], "session": session}
+        if action == "pause":
+            try:
+                with open(pause_file, "w", encoding="utf-8") as f:
+                    f.write(
+                        datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    )
+                    f.flush()
+                    os.fsync(f.fileno())
+                fsync_directory(PAUSE_DIR)
+            except OSError as exc:
+                return 500, {"error": f"agent pause could not be persisted: {exc}"}
+            warning = append_event_best_effort(
+                cid,
+                "pause",
+                agent["id"],
+                "future orders held at the serial gate",
+            )
+            return 200, response_with_warning(
+                {"status": "paused", "agent": agent["id"]}, warning
+            )
+        if action == "resume":
+            removed = False
+            try:
+                os.remove(pause_file)
+                removed = True
+                fsync_directory(PAUSE_DIR)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                return 500, {"error": f"agent resume could not be persisted: {exc}"}
+            warning = append_event_best_effort(
+                cid, "resume", agent["id"], "serial gate reopened"
+            )
+            return 200, response_with_warning(
+                {
+                    "status": "resumed",
+                    "agent": agent["id"],
+                    "idempotent": not removed,
+                },
+                warning,
+            )
+        if action == "interrupt":
+            if not _session_alive(session):
+                return 409, {"error": f"session '{session}' is not online"}
+            try:
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", session, "C-c"],
+                    timeout=5,
+                    check=True,
+                )
+            except (
+                FileNotFoundError,
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ) as exc:
+                return 500, {"error": f"interrupt failed: {exc}"}
+            warning = append_event_best_effort(
+                cid, "cancel", agent["id"], "active task interrupted by operator"
+            )
+            return 200, response_with_warning(
+                {"status": "interrupted", "agent": agent["id"]}, warning
+            )
+
+        command = agent.get("restart_command") or []
+        if not command:
+            return 409, {"error": "no restart command configured for this agent"}
+        if _session_alive(session):
+            return 409, {"error": f"session '{session}' is already online"}
+        directory = os.path.expanduser(agent.get("directory") or HOME)
+        if not os.path.isdir(directory):
+            return 409, {
+                "error": (
+                    "registered working directory does not exist: "
+                    f"{agent.get('directory')}"
+                )
+            }
+        try:
+            subprocess.run(
+                [
+                    "tmux",
+                    "new-session",
+                    "-d",
+                    "-s",
+                    session,
+                    "-c",
+                    directory,
+                    *command,
+                ],
+                timeout=10,
+                check=True,
+            )
+        except (
+            FileNotFoundError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as exc:
+            return 500, {"error": f"restart failed: {exc}"}
+        warning = append_event_best_effort(
+            cid,
+            "start",
+            agent["id"],
+            "agent session restarted from provider registry",
+        )
+        return 200, response_with_warning(
+            {"status": "restarted", "agent": agent["id"], "session": session},
+            warning,
+        )
 
 
 def global_stop_control(body):
@@ -785,7 +1069,6 @@ def global_stop_control(body):
         return 400, {"error": str(exc)}
     action = str(data.get("action", "")).strip()
     script = os.path.join(BASE, "scripts", "global-stop.sh")
-    before = os.path.isfile(_stop_file())
     if action == "engage":
         reason = str(data.get("reason") or "Sealed from Mission Control")
         argv = ["bash", script, "set", reason]
@@ -795,29 +1078,76 @@ def global_stop_control(body):
     else:
         return 400, {"error": "action must be engage or release"}
     try:
-        result = subprocess.run(
-            argv, capture_output=True, text=True, timeout=10, check=False
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        reason.encode("utf-8")
+    except UnicodeError:
+        return 400, {"error": "global stop reason must be valid UTF-8 text"}
+
+    try:
+        with locked_state_file(_stop_lock_file()):
+            before = global_stop_state()
+            if not before["valid"]:
+                return 409, {
+                    "error": (
+                        f"{before['error']}; stop remains engaged fail-closed "
+                        "until the node is repaired"
+                    )
+                }
+            expected = action == "engage"
+            if before["stopped"] == expected:
+                return 200, {
+                    "status": "stopped" if expected else "running",
+                    "idempotent": True,
+                }
+            try:
+                command_environment = os.environ.copy()
+                # global-stop.sh uses the same lock for direct CLI calls. Avoid
+                # reacquiring it when Mission Control already owns the transition.
+                command_environment["HERMES_STOP_LOCK_HELD"] = "1"
+                result = subprocess.run(
+                    argv,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                    env=command_environment,
+                )
+            except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
+                return 500, {"error": f"global stop command failed: {exc}"}
+            if result.returncode != 0:
+                return 500, {
+                    "error": result.stderr.strip() or "global stop command failed"
+                }
+            after = global_stop_state()
+            if not after["valid"] or after["stopped"] != expected:
+                return 500, {
+                    "error": (
+                        "global stop command did not persist a valid requested state"
+                    )
+                }
+            durability_warning = ""
+            try:
+                fsync_directory(os.path.dirname(_stop_file()) or ".")
+            except OSError as exc:
+                durability_warning = (
+                    f"global stop changed but directory sync failed: {exc}"
+                )
+            telemetry_warning = append_event_best_effort(
+                f"{uuid.uuid4()}:0",
+                "stop" if expected else "start",
+                "mission-control",
+                reason,
+            )
+            warning = "; ".join(
+                item
+                for item in (durability_warning, telemetry_warning)
+                if item
+            )
+            return 200, response_with_warning({
+                "status": "stopped" if expected else "running",
+                "idempotent": False,
+            }, warning)
+    except OSError as exc:
         return 500, {"error": f"global stop command failed: {exc}"}
-    if result.returncode != 0:
-        return 500, {"error": result.stderr.strip() or "global stop command failed"}
-    after = os.path.isfile(_stop_file())
-    expected = action == "engage"
-    if after != expected:
-        return 500, {"error": "global stop command did not persist the requested state"}
-    changed = before != after
-    if changed:
-        append_event(
-            f"{uuid.uuid4()}:0",
-            "stop" if after else "start",
-            "mission-control",
-            reason,
-        )
-    return 200, {
-        "status": "stopped" if after else "running",
-        "idempotent": not changed,
-    }
 
 
 def deployment_decision(body):
@@ -830,38 +1160,93 @@ def deployment_decision(body):
     decision = str(data.get("decision", "")).strip()
     if not deploy_id or decision not in ("approve", "deny"):
         return 400, {"error": "deployment_id and approve/deny decision are required"}
+    reason = str(data.get("reason") or "")
+    try:
+        reason_bytes = reason.encode("utf-8")
+    except UnicodeError:
+        return 400, {"error": "deployment reason must be valid UTF-8 text"}
+    if len(reason_bytes) > 2000:
+        return 400, {"error": "deployment reason exceeds the 2000-byte limit"}
+    decided_by = os.environ.get("USER", "operator")
+    try:
+        decided_by.encode("utf-8")
+    except UnicodeError:
+        return 400, {"error": "deployment operator must be valid UTF-8 text"}
     try:
         result = record_decision(
             DEPLOY_DIR,
             APPROVAL_DIR,
             deploy_id,
             decision,
-            str(data.get("reason") or ""),
-            os.environ.get("USER", "operator"),
+            reason,
+            decided_by,
         )
     except InvalidDeploymentId as exc:
         return 400, {"error": str(exc)}
     except MissingRequest as exc:
         return 404, {"error": str(exc)}
+    except UnicodeError as exc:
+        return 400, {"error": f"deployment text is not valid UTF-8: {exc}"}
     except ApprovalStateError as exc:
         return 409, {"error": str(exc)}
+    except OSError as exc:
+        return 500, {"error": f"deployment decision storage failed: {exc}"}
 
+    warning = ""
     if not result["idempotent"]:
-        append_event(
+        warning = append_event_best_effort(
             f"{uuid.uuid4()}:0",
             decision,
             "mission-control",
             f"deployment {deploy_id}",
         )
-    return 200, result
+    return 200, response_with_warning(result, warning)
 
 
 def list_deployments():
-    """Validated pending deployment requests from the shared approval contract."""
+    """Return validated pending requests plus explicit degradation evidence."""
+    pending = []
+    errors = []
     try:
-        return list_pending(DEPLOY_DIR, APPROVAL_DIR)
-    except (ApprovalStateError, OSError, ValueError):
-        return []
+        filenames = os.listdir(DEPLOY_DIR)
+    except FileNotFoundError:
+        return 200, {"deployments": [], "degraded": False, "errors": []}
+    except OSError as exc:
+        return 503, {
+            "deployments": [],
+            "degraded": True,
+            "errors": [f"deployment request directory is unavailable: {exc}"],
+        }
+    for filename in sorted(filenames):
+        if not filename.endswith(".json"):
+            continue
+        try:
+            deployment_id = validate_deployment_id(filename[:-5])
+        except InvalidDeploymentId:
+            errors.append("invalid deployment record filename")
+            continue
+        try:
+            state = deployment_status(DEPLOY_DIR, APPROVAL_DIR, deployment_id)
+        except ApprovalStateError as exc:
+            errors.append(f"deployment {deployment_id}: {exc}")
+            continue
+        except OSError as exc:
+            return 503, {
+                "deployments": pending,
+                "degraded": True,
+                "errors": [
+                    *errors,
+                    f"deployment {deployment_id} could not be read: {exc}",
+                ],
+            }
+        if state.get("decision") is None:
+            pending.append(state["request"])
+    pending.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+    return 200, {
+        "deployments": pending,
+        "degraded": bool(errors),
+        "errors": errors[:100],
+    }
 
 
 def _session_alive(session):
@@ -890,23 +1275,36 @@ def send_keys(body):
     if not target:
         return 403, {"error": "session is not present in the provider registry"}
     _agent, session = target
-    try:
-        if not _session_alive(session):
-            return 400, {"error": f"session '{session}' not found"}
-        subprocess.run(["tmux", "send-keys", "-t", session, text], timeout=5, check=True)
-        if submit:
-            # ponytail: two-Enter quirk — first inserts, second (after 5s) submits.
-            # Same as dispatch-consumer.sh; upgrade path is a real key protocol if this drifts.
-            subprocess.run(["tmux", "send-keys", "-t", session, "Enter"], timeout=5, check=True)
-            time.sleep(5)
+    with session_operation_lock(session):
+        try:
+            if not _session_alive(session):
+                return 400, {"error": f"session '{session}' not found"}
             subprocess.run(
-                ["tmux", "send-keys", "-t", session, "Enter"],
+                ["tmux", "send-keys", "-t", session, text],
                 timeout=5,
                 check=True,
             )
-        return 200, {"status": "sent", "session": session}
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        return 400, {"error": f"send failed: {e}"}
+            if submit:
+                # ponytail: two-Enter quirk — first inserts, second (after 5s) submits.
+                # Same as dispatch-consumer.sh; upgrade path is a real key protocol if this drifts.
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", session, "Enter"],
+                    timeout=5,
+                    check=True,
+                )
+                time.sleep(5)
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", session, "Enter"],
+                    timeout=5,
+                    check=True,
+                )
+            return 200, {"status": "sent", "session": session}
+        except (
+            FileNotFoundError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as exc:
+            return 400, {"error": f"send failed: {exc}"}
 
 
 def clear_session(body):
@@ -922,20 +1320,33 @@ def clear_session(body):
     if not target:
         return 403, {"error": "session is not present in the provider registry"}
     _agent, session = target
-    try:
-        if not _session_alive(session):
-            return 400, {"error": f"session '{session}' not found"}
-        subprocess.run(["tmux", "send-keys", "-t", session, "/clear"], timeout=5, check=True)
-        subprocess.run(["tmux", "send-keys", "-t", session, "Enter"], timeout=5, check=True)
-        time.sleep(5)
-        subprocess.run(
-            ["tmux", "send-keys", "-t", session, "Enter"],
-            timeout=5,
-            check=True,
-        )
-        return 200, {"status": "cleared", "session": session}
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        return 400, {"error": f"clear failed: {e}"}
+    with session_operation_lock(session):
+        try:
+            if not _session_alive(session):
+                return 400, {"error": f"session '{session}' not found"}
+            subprocess.run(
+                ["tmux", "send-keys", "-t", session, "/clear"],
+                timeout=5,
+                check=True,
+            )
+            subprocess.run(
+                ["tmux", "send-keys", "-t", session, "Enter"],
+                timeout=5,
+                check=True,
+            )
+            time.sleep(5)
+            subprocess.run(
+                ["tmux", "send-keys", "-t", session, "Enter"],
+                timeout=5,
+                check=True,
+            )
+            return 200, {"status": "cleared", "session": session}
+        except (
+            FileNotFoundError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as exc:
+            return 400, {"error": f"clear failed: {exc}"}
 
 
 def _days(period):
@@ -967,8 +1378,14 @@ def status_payload():
 
     circuit_value = payload.get("circuit_breaker")
     circuit = dict(circuit_value) if isinstance(circuit_value, dict) else {}
-    live_stopped = os.path.isfile(_stop_file())
+    stop_state = global_stop_state()
+    live_stopped = stop_state["stopped"]
     circuit["global_stop"] = live_stopped
+    circuit["global_stop_valid"] = stop_state["valid"]
+    if stop_state["error"]:
+        circuit["global_stop_error"] = stop_state["error"]
+    else:
+        circuit.pop("global_stop_error", None)
 
     def number(mapping, key):
         value = mapping.get(key) if isinstance(mapping, dict) else None
@@ -1190,11 +1607,28 @@ def list_task_runs(limit=100):
     return out[:bounded_limit]
 
 
+def _read_regular_utf8(path):
+    """Read one regular file without following a final-component symlink."""
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        node = os.fstat(descriptor)
+        if not stat.S_ISREG(node.st_mode):
+            raise OSError("file is not a regular file")
+        with os.fdopen(descriptor, encoding="utf-8") as f:
+            descriptor = None
+            return f.read()
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
 def _parse_ticket(path):
     try:
-        with open(path, encoding="utf-8") as f:
-            content = f.read()
-    except OSError:
+        content = _read_regular_utf8(path)
+    except (OSError, UnicodeError):
         return None
     if not content.startswith("---\n"):
         return None
@@ -1232,6 +1666,7 @@ def _parse_ticket(path):
         "path": os.path.realpath(path),
         "goal": section("Goal"),
         "results": section("Results")[:12000],
+        "review_version": hashlib.sha256(content.encode("utf-8")).hexdigest(),
     }
 
 
@@ -1271,9 +1706,13 @@ def list_tickets(limit=200):
     return out[:bounded_limit]
 
 
-def _replace_ticket_status(path, status):
-    with open(path, encoding="utf-8") as f:
-        content = f.read()
+def _replace_ticket_status(path, status, expected_version):
+    content = _read_regular_utf8(path)
+    current_version = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    if current_version != expected_version:
+        raise StaleTicketReview(
+            "ticket changed after it was loaded; refresh before reviewing"
+        )
     updated, count = re.subn(
         r"(?m)^status:\s*[^\n]*$",
         f"status: {status}",
@@ -1290,6 +1729,8 @@ def _replace_ticket_status(path, status):
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary, path)
+        fsync_directory(directory)
+        return hashlib.sha256(updated.encode("utf-8")).hexdigest()
     finally:
         try:
             os.unlink(temporary)
@@ -1317,19 +1758,67 @@ def review_ticket(body):
             return 403, {"error": "ticket path escapes the configured ticket directory"}
     except ValueError:
         return 403, {"error": "ticket path is invalid"}
-    if decision == "done" and ticket.get("status") != "pending_review":
-        return 409, {"error": "only pending_review tickets can be marked done"}
+    supplied_version = str(data.get("review_version") or "").strip()
+    review_lock = os.path.join(TICKET_DIR, f".review-{ticket_id}.lock")
     try:
-        _replace_ticket_status(path, decision)
-    except (OSError, ValueError) as exc:
+        with locked_state_file(review_lock):
+            current = _parse_ticket(path)
+            if not current or current.get("id") != ticket_id:
+                return 409, {
+                    "error": "ticket changed or became unreadable; refresh before reviewing"
+                }
+            current_status = current.get("status")
+            current_version = current["review_version"]
+            if current_status in ("done", "blocked"):
+                if current_status == decision:
+                    return 200, {
+                        "status": decision,
+                        "ticket_id": ticket_id,
+                        "review_version": current_version,
+                        "idempotent": True,
+                    }
+                return 409, {
+                    "error": (
+                        f"ticket is already {current_status}; a conflicting "
+                        f"{decision} review cannot replace it"
+                    )
+                }
+            if current_status != "pending_review":
+                return 409, {
+                    "error": (
+                        "only pending_review tickets can be marked done or blocked"
+                    )
+                }
+            if not re.fullmatch(r"[0-9a-f]{64}", supplied_version):
+                return 400, {
+                    "error": (
+                        "review_version from the current ticket listing is required"
+                    )
+                }
+            new_version = _replace_ticket_status(
+                path, decision, supplied_version
+            )
+    except StaleTicketReview as exc:
         return 409, {"error": str(exc)}
-    append_event(
+    except ValueError as exc:
+        return 409, {"error": str(exc)}
+    except (OSError, UnicodeError) as exc:
+        return 500, {"error": f"ticket review storage failed: {exc}"}
+    warning = append_event_best_effort(
         f"{uuid.uuid4()}:0",
         "ticket_done" if decision == "done" else "ticket_blocked",
         "mission-control",
         ticket_id,
     )
-    return 200, {"status": decision, "ticket_id": ticket_id}
+    return 200, response_with_warning(
+        {
+            "status": decision,
+            "ticket_id": ticket_id,
+            "review_version": new_version,
+            "idempotent": False,
+        },
+        warning,
+    )
 
 
 def list_learnings():
@@ -1360,25 +1849,37 @@ def add_learning(body):
         return 400, {"error": "learning text is required"}
     if len(text) > 1000 or len(tags) > 120:
         return 400, {"error": "learning text or tags exceed the configured limit"}
-    os.makedirs(os.path.dirname(LEARNINGS_FILE) or ".", exist_ok=True)
-    os.makedirs(os.path.dirname(LEARNINGS_LOCK) or ".", exist_ok=True)
-    with open(LEARNINGS_LOCK, "a+", encoding="utf-8") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        if not os.path.exists(LEARNINGS_FILE):
-            with open(LEARNINGS_FILE, "w", encoding="utf-8") as f:
-                f.write(
-                    "# Hermes Compound Learnings\n\n"
-                    "> Machine-writeable, human-curated. Kevin decides what stays "
-                    "and what becomes a skill.\n\n## Active Learnings\n\n"
-                )
-        entry = f"{datetime.now(timezone.utc).date().isoformat()} [{tags}] {text}"
-        with open(LEARNINGS_FILE, "a", encoding="utf-8") as f:
-            f.write(f"- {entry}\n")
-            f.flush()
-            os.fsync(f.fileno())
-        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-    append_event(f"{uuid.uuid4()}:0", "learning", "mission-control", text[:100])
-    return 200, {"status": "recorded", "entry": entry}
+    learning_dir = os.path.dirname(LEARNINGS_FILE) or "."
+    try:
+        os.makedirs(learning_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(LEARNINGS_LOCK) or ".", exist_ok=True)
+        with open(LEARNINGS_LOCK, "a+", encoding="utf-8") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            if not os.path.exists(LEARNINGS_FILE):
+                with open(LEARNINGS_FILE, "w", encoding="utf-8") as f:
+                    f.write(
+                        "# Hermes Compound Learnings\n\n"
+                        "> Machine-writeable, human-curated. Kevin decides what "
+                        "stays and what becomes a skill.\n\n"
+                        "## Active Learnings\n\n"
+                    )
+                    f.flush()
+                    os.fsync(f.fileno())
+                fsync_directory(learning_dir)
+            entry = f"{datetime.now(timezone.utc).date().isoformat()} [{tags}] {text}"
+            with open(LEARNINGS_FILE, "a", encoding="utf-8") as f:
+                f.write(f"- {entry}\n")
+                f.flush()
+                os.fsync(f.fileno())
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    except (OSError, UnicodeError) as exc:
+        return 500, {"error": f"learning storage failed: {exc}"}
+    warning = append_event_best_effort(
+        f"{uuid.uuid4()}:0", "learning", "mission-control", text[:100]
+    )
+    return 200, response_with_warning(
+        {"status": "recorded", "entry": entry}, warning
+    )
 
 
 def phase5_status():
@@ -1571,7 +2072,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/providers":
             self._send(200, load_provider_registry())
         elif path == "/api/deployments":
-            self._send(200, list_deployments())
+            self._send(*list_deployments())
         elif path == "/api/agent/session":
             qs = parse_qs(u.query)
             session = (qs.get("session") or [""])[0]

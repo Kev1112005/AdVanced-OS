@@ -93,7 +93,9 @@ def _read_record(path, label):
             )
         with open(path, encoding="utf-8") as handle:
             record = json.load(handle)
-    except (OSError, ValueError) as exc:
+    except OSError:
+        raise
+    except (ValueError, UnicodeError) as exc:
         raise InvalidRecord(f"{label} is unreadable or corrupt: {path}") from exc
     if not isinstance(record, dict) or not record:
         raise InvalidRecord(f"{label} must be a non-empty JSON object: {path}")
@@ -106,7 +108,11 @@ def _bounded_text(record, field, limit, label, required=False):
         raise InvalidRecord(f"{label} field '{field}' must be text")
     if required and not value.strip():
         raise InvalidRecord(f"{label} field '{field}' is required")
-    if len(value.encode("utf-8")) > limit:
+    try:
+        encoded_length = len(value.encode("utf-8"))
+    except UnicodeError as exc:
+        raise InvalidRecord(f"{label} field '{field}' is not valid UTF-8") from exc
+    if encoded_length > limit:
         raise InvalidRecord(
             f"{label} field '{field}' exceeds the {limit}-byte limit"
         )
@@ -149,17 +155,19 @@ def _validate_decision(decision, deployment_id):
 
 def _load_request(deploy_dir, deployment_id):
     path = _request_path(deploy_dir, deployment_id)
-    if not path.exists():
+    try:
+        request = _read_record(path, "deployment request")
+    except FileNotFoundError:
         raise MissingRequest(f"deployment request not found: {deployment_id}")
-    request = _read_record(path, "deployment request")
     return _validate_request(request, deployment_id)
 
 
 def _load_decision(approval_dir, deployment_id):
     path = _approval_path(approval_dir, deployment_id)
-    if not path.exists():
+    try:
+        decision = _read_record(path, "deployment decision")
+    except FileNotFoundError:
         return None
-    decision = _read_record(path, "deployment decision")
     return _validate_decision(decision, deployment_id)
 
 
@@ -172,15 +180,13 @@ def _atomic_write(path, record):
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
+        directory_fd = os.open(
+            path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        )
         try:
-            directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        except (AttributeError, OSError):
-            directory_fd = None
-        if directory_fd is not None:
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
     finally:
         try:
             temporary.unlink()
@@ -286,14 +292,15 @@ def deployment_status(deploy_dir, approval_dir, deployment_id):
 def list_pending(deploy_dir, approval_dir):
     """Return valid pending requests using the shared ID and record contract."""
     pending = []
-    with _state_lock(deploy_dir):
+    with _state_lock(deploy_dir, approval_dir):
         for path in Path(deploy_dir).glob("*.json"):
             try:
                 deployment_id = validate_deployment_id(path.stem)
                 request = _load_request(deploy_dir, deployment_id)
+                decision = _load_decision(approval_dir, deployment_id)
             except ApprovalStateError:
                 continue
-            if _approval_path(approval_dir, deployment_id).exists():
+            if decision is not None:
                 continue
             pending.append(request)
     pending.sort(key=lambda item: item.get("created_at", ""), reverse=True)
@@ -402,6 +409,22 @@ def main(argv=None):
             print(json.dumps({"status": "invalid", "error": str(exc)}))
         else:
             print(f"error: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+    except (OSError, UnicodeError) as exc:
+        try:
+            detail = str(exc)
+            detail.encode("utf-8")
+        except UnicodeError:
+            detail = ascii(exc)
+        error = f"deployment approval state unavailable: {detail}"
+        if args.command == "check":
+            print(json.dumps({
+                "status": "invalid",
+                "unavailable": True,
+                "error": error,
+            }))
+        else:
+            print(f"error: {error}", file=sys.stderr)
         return EXIT_INVALID
     raise AssertionError(f"unhandled command: {args.command}")
 

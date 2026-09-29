@@ -107,7 +107,7 @@ CRIT_PCT="$(yaml_get critical_at_pct "$CONFIG")"; CRIT_PCT="${CRIT_PCT:-90}"
 ALERT_STATE_DIR="${HERMES_ALERT_STATE:-$HOME/.hermes/alerts}"
 
 # --- 1. global stop ---
-if [[ -f "$STOP_FILE" ]]; then
+if [[ -e "$STOP_FILE" || -L "$STOP_FILE" ]]; then
   echo '{"status":"FAIL","blocked_by":"global_stop","detail":"Global stop flag set"}'
   echo "BLOCKED: Global stop flag set" >&2
   exit 1

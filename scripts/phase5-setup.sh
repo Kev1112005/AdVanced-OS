@@ -21,21 +21,39 @@ scripts=(
 )
 
 install_phase5() {
-  mkdir -p "$HERMES_SCRIPT_DIR" "$HERMES_CONFIG_DIR"
+  local name source target config_source config_target
+  config_source="$REPO_ROOT/config/circuit-breaker.yaml"
+  config_target="$HERMES_CONFIG_DIR/circuit-breaker.yaml"
+
+  # Validate the complete source/target set before creating a directory or
+  # replacing a link. A late conflict must leave the runtime tree untouched.
   for name in "${scripts[@]}"; do
+    source="$REPO_ROOT/scripts/$name.sh"
     target="$HERMES_SCRIPT_DIR/$name.sh"
-    if [[ -e "$target" && ! -L "$target" ]]; then
+    if [[ ! -f "$source" ]]; then
+      echo "error: Phase 5 source is missing: $source" >&2
+      return 1
+    fi
+    if [[ (-e "$target" || -L "$target") && ! -L "$target" ]]; then
       echo "error: refusing to replace non-symlink runtime file: $target" >&2
       return 1
     fi
-    ln -sfn "$REPO_ROOT/scripts/$name.sh" "$target"
   done
-  config_target="$HERMES_CONFIG_DIR/circuit-breaker.yaml"
-  if [[ -e "$config_target" && ! -L "$config_target" ]]; then
+  if [[ ! -f "$config_source" ]]; then
+    echo "error: Phase 5 config source is missing: $config_source" >&2
+    return 1
+  fi
+  if [[ (-e "$config_target" || -L "$config_target") && ! -L "$config_target" ]]; then
     echo "error: refusing to replace non-symlink runtime config: $config_target" >&2
     return 1
   fi
-  ln -sfn "$REPO_ROOT/config/circuit-breaker.yaml" "$config_target"
+
+  mkdir -p "$HERMES_SCRIPT_DIR" "$HERMES_CONFIG_DIR"
+  for name in "${scripts[@]}"; do
+    target="$HERMES_SCRIPT_DIR/$name.sh"
+    ln -sfn "$REPO_ROOT/scripts/$name.sh" "$target"
+  done
+  ln -sfn "$config_source" "$config_target"
   bash "$SCRIPT_DIR/compound-learning.sh" init >/dev/null
   bash "$SCRIPT_DIR/ticket-scan.sh" init >/dev/null
   echo "Phase 5 runtime installed."
@@ -45,7 +63,7 @@ install_phase5() {
 }
 
 status_phase5() {
-  failed=0
+  local failed=0 name target config_target
   for name in "${scripts[@]}"; do
     target="$HERMES_SCRIPT_DIR/$name.sh"
     if [[ -L "$target" && "$(readlink -f "$target")" == "$REPO_ROOT/scripts/$name.sh" ]]; then
@@ -55,12 +73,26 @@ status_phase5() {
       failed=1
     fi
   done
-  [[ -f "${HERMES_LEARNINGS_FILE:-$HOME/hermes-learnings.md}" ]] \
-    && echo "ok      compound learning file" \
-    || { echo "missing compound learning file"; failed=1; }
-  [[ -d "${HERMES_TICKET_DIR:-$HOME/vaults/kevin/tickets}" ]] \
-    && echo "ok      ticket directory" \
-    || { echo "missing ticket directory"; failed=1; }
+  config_target="$HERMES_CONFIG_DIR/circuit-breaker.yaml"
+  if [[ -L "$config_target" \
+    && "$(readlink -f "$config_target")" == "$REPO_ROOT/config/circuit-breaker.yaml" ]]; then
+    printf 'ok      %s\n' "$config_target"
+  else
+    printf 'missing %s\n' "$config_target"
+    failed=1
+  fi
+  if [[ -f "${HERMES_LEARNINGS_FILE:-$HOME/hermes-learnings.md}" ]]; then
+    echo "ok      compound learning file"
+  else
+    echo "missing compound learning file"
+    failed=1
+  fi
+  if [[ -d "${HERMES_TICKET_DIR:-$HOME/vaults/kevin/tickets}" ]]; then
+    echo "ok      ticket directory"
+  else
+    echo "missing ticket directory"
+    failed=1
+  fi
   if curl --max-time 2 --fail --silent \
     "http://127.0.0.1:${MISSION_CONTROL_PORT:-4001}/api/phase5" >/dev/null; then
     echo "ok      Mission Control Phase 5 API"

@@ -319,6 +319,15 @@
     .approval p { margin: 6px 0 0; color: #747b72; font-size: 9px; }
     .risk { margin-left: auto; padding: 4px 7px; color: var(--warning); border: 1px solid rgba(211,154,73,.3); font: 8px var(--mono); text-transform: uppercase; }
     .approval-actions { display: flex; gap: 7px; margin-top: 11px; }
+    .slice-warning, .mobile-warning {
+      padding: 10px 12px;
+      color: #edb6aa;
+      border: 1px solid rgba(165,50,44,.5);
+      background: rgba(92,24,21,.2);
+      font: 9px/1.5 var(--mono);
+    }
+    .slice-warning { margin-bottom: 9px; }
+    .mobile-warning { display: none; margin-bottom: 12px; }
 
     .phase-five { margin-top: 18px; }
     .phase-grid { display: grid; grid-template-columns: 1.1fr 1.1fr .8fr; min-height: 330px; }
@@ -457,6 +466,7 @@
       .topbar { min-height: 64px; }
       .breadcrumb .eyebrow, #sealText { display: none; }
       .demo-ribbon.show, .control-feedback.show { display: block; max-width: 155px; }
+      .mobile-warning { display: block; }
       .content { padding: 12px; }
       .sanctum { min-height: 330px; padding: 22px; }
       .stats { grid-template-columns: 1fr 1fr; }
@@ -510,6 +520,7 @@
       </header>
 
       <div class="content" id="strategium">
+        <div class="mobile-warning" role="note">Mission Control is a desktop control surface. Use the Discord CLI for supported mobile control.</div>
         <section class="sanctum" aria-labelledby="sanctumTitle">
           <div class="sanctum-copy">
             <div class="eyebrow">The Inner Circle Is Watching</div>
@@ -529,7 +540,7 @@
             <div class="panel-header">
               <span class="panel-sigil" aria-hidden="true">‡</span>
               <div class="panel-title"><h2>Orders of the Watch</h2><p>Queued orders · recent delivery history</p></div>
-              <div class="panel-actions"><span id="orderCount" class="count">0</span><button class="btn small primary" type="button" onclick="openOrderModal()">New Order</button></div>
+              <div class="panel-actions"><span id="orderCount" class="count">0</span><button id="issueOrderPanel" class="btn small primary" type="button" onclick="openOrderModal()">New Order</button></div>
             </div>
             <div class="panel-body"><div id="orderList" class="orders" aria-live="polite"></div></div>
           </section>
@@ -549,9 +560,9 @@
               <div class="vox-input"><textarea id="voxInput" aria-label="Follow-up instruction" placeholder="Transmit a follow-up instruction…" onkeydown="voxKey(event)"></textarea><button id="sendVox" class="btn primary" type="button" onclick="sendFollowUp()">Transmit</button></div>
               <div class="agent-controls">
                 <button id="pauseAgent" class="btn small ghost" type="button" onclick="togglePause()">Hold Orders</button>
-                <button class="btn small ghost" type="button" onclick="confirmAgentAction('interrupt')">Interrupt</button>
-                <button class="btn small ghost" type="button" onclick="confirmAgentAction('restart')">Awaken</button>
-                <button class="btn small ghost" type="button" onclick="clearLive()">Clear Vox</button>
+                <button id="interruptAgent" class="btn small ghost" type="button" disabled title="Unavailable until cooperative halt is implemented">Interrupt unavailable</button>
+                <button id="awakenAgent" class="btn small ghost" type="button" onclick="confirmAgentAction('restart')">Awaken</button>
+                <button id="clearVox" class="btn small ghost" type="button" onclick="clearLive()">Clear Vox</button>
               </div>
             </div>
           </section>
@@ -602,7 +613,7 @@
             <div class="panel-header"><span class="panel-sigil" aria-hidden="true">♜</span><div class="panel-title"><h2>Inner Circle Registry</h2><p>Provider adapters · local tmux transport</p></div></div>
             <div class="panel-body"><div id="providerGrid" class="provider-grid"></div></div>
           </section>
-          <section class="panel" id="deployment-rites">
+          <section class="panel" id="deployment-rites" tabindex="-1">
             <div class="panel-header"><span class="panel-sigil" aria-hidden="true">⛨</span><div class="panel-title"><h2>Rites of Deployment</h2><p>Human sanction required · never autonomous</p></div><div class="panel-actions"><span id="approvalCount" class="count">0</span></div></div>
             <div class="panel-body"><div id="approvalList" class="approval-list"></div></div>
           </section>
@@ -660,6 +671,31 @@
     </div>
   </dialog>
 
+  <dialog id="deploymentReviewModal" aria-labelledby="deploymentReviewTitle" aria-describedby="deploymentReviewIntro">
+    <div class="modal-head"><span class="panel-sigil" aria-hidden="true">⛨</span><div><h2 id="deploymentReviewTitle">Review Deployment Rite</h2><p id="deploymentReviewIntro">Inspect the complete bounded request before recording an immutable decision.</p></div></div>
+    <div class="modal-body">
+      <dl class="review-meta">
+        <div><dt>Deployment</dt><dd id="deploymentReviewId">—</dd></div>
+        <div><dt>Risk</dt><dd id="deploymentReviewRisk">—</dd></div>
+        <div><dt>Repository</dt><dd id="deploymentReviewRepository">—</dd></div>
+        <div><dt>Ref</dt><dd id="deploymentReviewRef">—</dd></div>
+        <div><dt>Requested by</dt><dd id="deploymentReviewRequester">—</dd></div>
+        <div><dt>Created</dt><dd id="deploymentReviewCreated">—</dd></div>
+      </dl>
+      <h3 class="eyebrow">Summary</h3>
+      <pre id="deploymentReviewSummary" class="evidence" tabindex="0"></pre>
+      <h3 class="eyebrow">Checks</h3>
+      <pre id="deploymentReviewChecks" class="evidence" tabindex="0"></pre>
+      <h3 class="eyebrow">Rollback</h3>
+      <pre id="deploymentReviewRollback" class="evidence" tabindex="0"></pre>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" onclick="closeDeploymentReview()">Close</button>
+      <button id="deploymentReviewDeny" class="btn danger" type="button" onclick="submitDeploymentReview('deny')">Deny</button>
+      <button id="deploymentReviewApprove" class="btn primary" type="button" onclick="submitDeploymentReview('approve')">Sanction</button>
+    </div>
+  </dialog>
+
   <div id="toast" role="status" aria-live="polite"></div>
 
   <script>
@@ -702,16 +738,19 @@
 
     const EXPLICIT_DEMO = new URLSearchParams(window.location.search).get('demo') === '1';
     const SNAPSHOT_STALE_MS = 5 * 60 * 1000;
+    const SLICE_TIMEOUT_MS = 4000;
     const ACTION_ID = /^[A-Za-z0-9._:-]+$/;
     const state = {
       registry:{providers:[],agents:[]}, status:null, orders:[], events:[], deployments:[],
       taskRuns:[], tickets:[], learnings:{entries:[],count:0}, phase5:null,
       selectedAgent:'', demo:EXPLICIT_DEMO, confirm:null, confirmFocus:null,
-      reviewTicket:null, reviewFocus:null, controlError:'',
+      reviewTicket:null, reviewTicketSignature:'', reviewFocus:null,
+      reviewDeployment:null, reviewDeploymentSignature:'', deploymentReviewFocus:null,
+      controlError:'', voxSending:false,
       refreshGeneration:0, refreshController:null,
       liveGeneration:0, liveController:null, livePendingFor:'', liveCache:{},
       globalStopOverride:null,
-      slices:{}
+      slices:{}, renderKeys:{}, renderScheduled:false
     };
     let toastTimer;
 
@@ -731,26 +770,71 @@
       return body;
     }
     async function postJSON(url, data) {
+      if (state.demo) {
+        return {ok:false, status:403, body:{error:'Demo mode is read-only; no live action was sent'}};
+      }
       const response = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
       return {ok:response.ok, status:response.status, body:await response.json().catch(() => ({}))};
     }
     function provider(id) { return state.registry.providers.find(item => item.id === id) || {id, name:id || 'Unknown', type:id}; }
-    function agent(id) { return state.registry.agents.find(item => id === item.id || id === item.session) || null; }
+    function registeredAgents() {
+      return (Array.isArray(state.registry.agents) ? state.registry.agents : [])
+        .filter(item => item && typeof item === 'object' && validActionId(item.id));
+    }
+    function agent(id) { return registeredAgents().find(item => id === item.id || id === item.session) || null; }
     function currentAgent() { return agent(state.selectedAgent); }
     function validActionId(value) { return ACTION_ID.test(String(value || '')); }
     function restoreFocus(element, fallback='#issueTop') {
       if (element?.isConnected) element.focus();
       else $(fallback)?.focus();
     }
+    function replaceHTML(key, element, signature, html) {
+      if (state.renderKeys[key] === signature) return false;
+      state.renderKeys[key] = signature;
+      element.innerHTML = html;
+      return true;
+    }
+    function requestRender() {
+      if (state.renderScheduled) return;
+      state.renderScheduled = true;
+      setTimeout(() => {
+        state.renderScheduled = false;
+        renderAll();
+      }, 0);
+    }
+    function ticketSignature(ticket) {
+      return JSON.stringify([
+        ticket?.id, ticket?.status, ticket?.owner, ticket?.priority,
+        ticket?.mode, ticket?.goal, ticket?.results, ticket?.review_version
+      ]);
+    }
+    function validReviewVersion(value) {
+      return /^[0-9a-f]{64}$/.test(String(value || ''));
+    }
+    function deploymentSignature(item) {
+      return JSON.stringify([
+        item?.id || item?.deployment_id, item?.title, item?.summary,
+        item?.repository, item?.ref, item?.risk, item?.checks,
+        item?.rollback, item?.requested_by, item?.created_at
+      ]);
+    }
+    function allowLiveMutation() {
+      if (!state.demo) return true;
+      toast('Demo mode is read-only; no live action was sent', true);
+      return false;
+    }
     function snapshotStale() {
       const timestamp = Date.parse(state.status?.generated_at || '');
       return !Number.isFinite(timestamp) || Date.now() - timestamp > SNAPSHOT_STALE_MS;
     }
     function globalStopState() {
-      if (state.globalStopOverride) return {known:true, value:state.globalStopOverride.value};
-      const freshStatus = state.slices.status?.ok && !snapshotStale();
-      const value = state.status?.circuit_breaker?.global_stop;
-      return {known:Boolean(freshStatus && typeof value === 'boolean'), value:value === true};
+      const circuit = state.status?.circuit_breaker;
+      const authorityValid = state.slices.status?.ok && circuit?.global_stop_valid === true;
+      const value = state.globalStopOverride?.value ?? circuit?.global_stop;
+      return {
+        known:Boolean(authorityValid && typeof value === 'boolean'),
+        value:value === true
+      };
     }
     function setControlFeedback(message, focus=false) {
       state.controlError = message || '';
@@ -766,7 +850,7 @@
         .map(([name]) => name);
       const stale = state.status && snapshotStale();
       if (state.demo) {
-        ribbon.textContent = 'DEMO MODE · all simulated records are non-operational';
+        ribbon.textContent = 'DEMO MODE · read-only · simulated fallbacks are non-operational';
         ribbon.className = 'demo-ribbon show';
       } else if (failures.length || stale) {
         const parts = [];
@@ -785,7 +869,8 @@
     }
 
     function renderSystem() {
-      const agents = state.registry.agents || [];
+      const agents = registeredAgents();
+      const canIssueOrder = !state.demo && agents.length > 0;
       const online = agents.filter(a => ['active','idle','stuck','paused'].includes(a.status)).length;
       const active = agents.filter(a => a.status === 'active').length;
       const events = state.events.length ? state.events : (state.demo ? DEMO.events : []);
@@ -804,7 +889,16 @@
       $('#sideSignal').className = `signal ${stop.value || tripped ? 'bad' : degraded || !state.status ? 'warn' : 'good'}`;
       $('#sideStatus').textContent = stop.value ? 'The Rock is sealed' : tripped ? 'Circuit breaker tripped' : degraded ? 'Live state degraded' : state.status ? 'Snapshot current' : 'State unknown';
       $('#sealBtn').classList.toggle('engaged', stop.value);
-      $('#sealBtn').title = !stop.known ? 'Stop state is not current; this action can only engage the emergency seal.' : '';
+      if (!canIssueOrder && $('#orderModal').open) closeOrderModal();
+      $('#issueTop').disabled = !canIssueOrder;
+      $('#issueOrderPanel').disabled = !canIssueOrder;
+      $('#submitOrderBtn').disabled = !canIssueOrder;
+      $('#issueTop').title = canIssueOrder ? '' : state.demo ? 'Demo mode is read-only' : 'No registered agents are available';
+      $('#issueOrderPanel').title = $('#issueTop').title;
+      $('#sealBtn').disabled = state.demo;
+      $('#sealBtn').title = state.demo
+        ? 'Demo mode is read-only'
+        : !stop.known ? 'Stop state is not current; this action can only engage the emergency seal.' : '';
       $('#sealText').textContent = stop.known && stop.value ? 'Unseal the Rock' : 'Seal the Rock';
       $('#sealBtn').setAttribute('aria-label', stop.known && stop.value ? 'Unseal the Rock' : 'Seal the Rock');
       $('#lastStamp').textContent = state.status?.generated_at ? `Snapshot ${hhmmss(state.status.generated_at)}${snapshotStale() ? ' · stale' : ''}` : 'No trusted status snapshot';
@@ -832,7 +926,7 @@
       });
       if (!list.length && state.demo) list.push(...DEMO.orders);
       $('#orderCount').textContent = list.length;
-      $('#orderList').innerHTML = list.length ? list.map(order => {
+      const html = list.length ? list.map(order => {
         const p = provider(order.provider_id);
         const status = order.status || 'queued';
         const copy = String(order.summary || order.task || '').replace(/^# .*?\n+/, '').slice(0, 160);
@@ -844,41 +938,71 @@
             <p>${esc(copy || 'Sealed task document')}</p>
             <div class="order-meta"><span>Assigned <b>${esc(order.agent_name || agent(order.agent_id || order.agent)?.name || order.agent)}</b></span><span>${esc(order.repository || 'No repository')}</span><span>${ago(order.created_at)}</span></div>
           </div>
-          <div class="order-side"><span class="status-pill ${esc(status)}">${esc(status.replaceAll('_',' '))}</span>${cancellable ? `<button class="icon-btn" type="button" title="Cancel queued order" aria-label="Cancel queued order ${esc(order.title || order.request_id)}" data-dashboard-action="cancel-order" data-request-id="${esc(order.request_id)}" ${order.simulated ? 'disabled' : ''}>×</button>` : ''}</div>
+          <div class="order-side"><span class="status-pill ${esc(status)}">${esc(status.replaceAll('_',' '))}</span>${cancellable ? `<button class="icon-btn" type="button" title="Cancel queued order" aria-label="Cancel queued order ${esc(order.title || order.request_id)}" data-dashboard-action="cancel-order" data-request-id="${esc(order.request_id)}" ${order.simulated || state.demo ? 'disabled' : ''}>×</button>` : ''}</div>
         </article>`;
       }).join('') : `<div class="empty"><div><span class="rune">‡</span><strong>No orders await judgment</strong><small>Issue a structured order to place work behind the serial gate.</small></div></div>`;
+      replaceHTML('orders', $('#orderList'), JSON.stringify([state.demo, list]), html);
     }
 
     function renderAgentOptions() {
-      const agents = state.registry.agents || [];
+      const agents = registeredAgents();
       const orderSelect = $('#orderAgent');
       const orderSelection = $('#orderModal').open ? orderSelect.value : '';
       if (!state.selectedAgent || !agent(state.selectedAgent)) state.selectedAgent = agents[0]?.id || '';
       const options = agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} · ${esc(provider(a.provider_id).name)}${a.paused ? ' · orders held' : ''}</option>`).join('');
-      $('#agentSelect').innerHTML = options;
-      orderSelect.innerHTML = options;
+      replaceHTML('agent-options', $('#agentSelect'), options, options);
+      replaceHTML('order-agent-options', orderSelect, options, options);
       $('#agentSelect').value = state.selectedAgent;
       const orderAgent = orderSelection && agent(orderSelection) ? orderSelection : state.selectedAgent;
       if (orderAgent) orderSelect.value = orderAgent;
+      orderSelect.disabled = state.demo || agents.length === 0;
       renderLiveIdentity();
     }
 
     function renderLiveIdentity() {
       const selected = currentAgent();
-      if (!selected) return;
+      if (!selected) {
+        $('#liveName').textContent = 'No agent';
+        $('#liveRole').textContent = 'Awaiting registry';
+        $('#liveProviderTag').textContent = '—';
+        $('#liveProviderTag').className = 'tag';
+        $('#liveSignal').className = 'signal warn';
+        $('#agentSelect').disabled = true;
+        $('#pauseAgent').textContent = 'Hold Orders';
+        ['#voxInput','#sendVox','#pauseAgent','#interruptAgent','#awakenAgent','#clearVox']
+          .forEach(selector => { $(selector).disabled = true; });
+        return;
+      }
       const p = provider(selected.provider_id);
+      const capabilities = Array.isArray(selected.capabilities) ? selected.capabilities : [];
+      const supports = capability => !capabilities.length || capabilities.includes(capability);
+      const online = !['offline','unknown'].includes(selected.status);
+      const readOnly = state.demo;
       $('#liveName').textContent = selected.name;
       $('#liveRole').textContent = selected.role || selected.model || 'Sworn agent';
       $('#liveProviderTag').textContent = p.name;
       $('#liveProviderTag').className = `tag ${p.type}`;
       $('#liveSignal').className = `signal ${selected.status === 'active' ? 'good' : selected.status === 'stuck' ? 'bad' : selected.status === 'offline' ? 'warn' : 'good'}`;
+      $('#agentSelect').disabled = false;
       $('#pauseAgent').textContent = selected.paused ? 'Release Orders' : 'Hold Orders';
+      $('#pauseAgent').disabled = readOnly || !supports('pause');
+      $('#voxInput').disabled = readOnly || !online || !supports('follow_up') || state.voxSending;
+      $('#sendVox').disabled = readOnly || !online || !supports('follow_up') || state.voxSending;
+      $('#clearVox').disabled = readOnly || !online || !supports('follow_up');
+      $('#awakenAgent').disabled = readOnly || online || !supports('restart') || !(selected.restart_command || []).length;
+      $('#interruptAgent').disabled = true;
     }
 
     async function renderLive(force=false) {
       const selected = currentAgent();
-      if (!selected) { $('#liveOut').textContent = 'No agent is registered.'; return; }
       renderLiveIdentity();
+      if (!selected) {
+        if (state.liveController) state.liveController.abort();
+        state.liveGeneration += 1;
+        state.livePendingFor = '';
+        $('#liveOut').textContent = 'No agent is registered.';
+        return;
+      }
       const key = selected.session || selected.id;
       if (!force && state.livePendingFor === key) return;
       if (state.liveController) state.liveController.abort();
@@ -913,27 +1037,42 @@
       const filter = $('#eventFilter').value;
       if (filter === 'control') list = list.filter(e => ['pause','resume','cancel','stop','start','approve','deny'].includes(e.event));
       else if (filter !== 'all') list = list.filter(e => filter === 'fail' ? ['fail','qa_fail','deny','cancel'].includes(e.event) : e.event === filter);
-      $('#eventList').innerHTML = list.length ? list.slice().reverse().map(e => `<div class="event ${esc(e.event)}">
+      const html = list.length ? list.slice().reverse().map(e => `<div class="event ${esc(e.event)}">
         <time>${esc(hhmmss(e.ts))}</time><span class="event-kind">${esc(e.event.replaceAll('_',' '))}</span><span class="actor">${esc(agent(e.agent)?.name || e.agent)}</span><span>${esc(e.detail || 'No detail recorded')}</span><span class="cid">${esc(String(e.correlation_id || '').slice(0, 14))}</span>
       </div>`).join('') : `<div class="empty"><div><span class="rune">✥</span><strong>The chronicle is silent</strong><small>Agent and operator rites will appear here as structured events.</small></div></div>`;
+      replaceHTML('events', $('#eventList'), JSON.stringify([state.demo, filter, list]), html);
     }
 
     function renderProviders() {
       const providers = state.registry.providers || [];
-      $('#providerGrid').innerHTML = providers.length ? providers.map(p => `<article class="provider-card">
+      const html = providers.length ? providers.map(p => `<article class="provider-card">
         <div class="provider-top"><span class="provider-rune">${providerRune(p.type)}</span><div><h3>${esc(p.name)}</h3><span class="status-pill ${p.counts?.online ? 'active' : ''}">${p.counts?.online || 0}/${p.counts?.total || 0} online</span></div></div>
         <p>${esc(p.description || 'Provider adapter registered with the Inner Circle.')}</p>
         <div class="provider-meta"><span>${esc((p.transport || 'unknown').replaceAll('_',' '))}</span><span>${p.counts?.active || 0} active</span></div>
       </article>`).join('') : `<div class="empty"><div><span class="rune">♜</span><strong>No providers sworn</strong><small>Add providers to config/providers.json.</small></div></div>`;
+      replaceHTML('providers', $('#providerGrid'), JSON.stringify(providers), html);
     }
 
     function renderDeployments() {
       const list = state.deployments.length ? state.deployments : (state.demo ? DEMO.deployments : []);
+      const degraded = state.slices.deployments?.attempted && !state.slices.deployments.ok;
+      const degradationDetail = String(state.slices.deployments?.error || '').slice(0, 400);
       $('#approvalCount').textContent = list.length;
-      $('#approvalList').innerHTML = list.length ? list.map(item => `<article class="approval">
+      const warning = degraded
+        ? `<div class="slice-warning" role="alert">Deployment state is unavailable. The listing may be incomplete; records are shown read-only and no decision can be recorded.${degradationDetail ? ` Details: ${esc(degradationDetail)}` : ''}</div>`
+        : '';
+      const records = list.length ? list.map(item => `<article class="approval">
         <div class="approval-top"><div><h3>${esc(item.title || item.id || 'Deployment rite')}</h3><p>${esc(item.summary || 'Awaiting operator risk review.')}</p></div><span class="risk">${esc(item.risk || 'review')} risk</span></div>
-        <div class="approval-actions"><button class="btn small primary" type="button" data-dashboard-action="deployment-decision" data-deployment-id="${esc(item.id || item.deployment_id)}" data-decision="approve" ${item.simulated ? 'disabled' : ''}>Sanction</button><button class="btn small danger" type="button" data-dashboard-action="deployment-decision" data-deployment-id="${esc(item.id || item.deployment_id)}" data-decision="deny" ${item.simulated ? 'disabled' : ''}>Deny</button>${item.simulated ? '<span class="tag">demonstration</span>' : ''}</div>
-      </article>`).join('') : `<div class="empty"><div><span class="rune">⛨</span><strong>No rite awaits sanction</strong><small>Deployments remain inert until an explicit human decision is recorded.</small></div></div>`;
+        <div class="approval-actions"><button class="btn small primary" type="button" data-dashboard-action="review-deployment" data-deployment-id="${esc(item.id || item.deployment_id)}" ${item.simulated || state.demo || degraded ? 'disabled' : ''}>Review Complete Request</button>${item.simulated ? '<span class="tag">demonstration</span>' : ''}</div>
+      </article>`).join('') : degraded
+        ? `<div class="empty"><div><span class="rune">⛨</span><strong>Deployment state unavailable</strong><small>Mission Control could not verify whether a rite awaits sanction.</small></div></div>`
+        : `<div class="empty"><div><span class="rune">⛨</span><strong>No rite awaits sanction</strong><small>Deployments remain inert until an explicit human decision is recorded.</small></div></div>`;
+      replaceHTML(
+        'deployments',
+        $('#approvalList'),
+        JSON.stringify([state.demo, degraded, list]),
+        warning + records
+      );
     }
 
     function renderPhaseFive() {
@@ -944,9 +1083,12 @@
       const ready = readiness.qa_gate?.ready && readiness.tickets?.ready && readiness.learnings?.ready;
       $('#phaseFiveState').textContent = ready ? 'configured' : 'setup needed';
       $('#phaseFiveState').className = `status-pill ${ready ? 'qa_pass' : 'queued'}`;
+      $('#learningText').disabled = state.demo;
+      $('#learningTags').disabled = state.demo;
+      $('#addLearningBtn').disabled = state.demo;
 
       $('#qaRunCount').textContent = `${runs.length} run${runs.length === 1 ? '' : 's'}`;
-      $('#qaRunList').innerHTML = runs.length ? runs.map(run => {
+      const qaHtml = runs.length ? runs.map(run => {
         const checks = run.checks || [];
         const passed = checks.filter(check => check.passed).length;
         const failed = checks.find(check => !check.passed);
@@ -962,17 +1104,20 @@
           <details class="phase-detail"><summary>Inspect full QA evidence</summary><pre class="evidence" tabindex="0">${esc(checkEvidence + reportEvidence)}</pre></details>
         </article>`;
       }).join('') : `<div class="empty"><div><span class="rune">⚙</span><strong>No QA runs yet</strong><small>Issue an order; its baseline is captured when the serial gate delivers it.</small></div></div>`;
+      replaceHTML('qa-runs', $('#qaRunList'), JSON.stringify(runs), qaHtml);
 
       $('#ticketCount').textContent = `${tickets.length} ticket${tickets.length === 1 ? '' : 's'}`;
-      $('#ticketList').innerHTML = tickets.length ? tickets.map(ticket => `<article class="phase-item">
+      const ticketHtml = tickets.length ? tickets.map(ticket => `<article class="phase-item">
         <div class="phase-item-top"><h4>${esc(ticket.id)}</h4><span class="status-pill ${esc(ticket.status || 'unknown')}">${esc((ticket.status || 'unknown').replaceAll('_',' '))}</span></div>
         <p>${esc((ticket.results || ticket.goal || 'Awaiting ticket content').slice(0, 320))}</p>
         <div class="phase-meta"><span>${esc(ticket.owner || 'unclaimed')}</span><span>${esc(ticket.priority || 'normal')}</span><span>${esc(ticket.mode || 'report-only')}</span></div>
-        ${ticket.results || ticket.status === 'pending_review' ? `<div class="phase-actions"><button class="btn small primary" type="button" data-dashboard-action="review-ticket" data-ticket-id="${esc(ticket.id)}">Review Complete Result</button></div>` : ''}
+        ${ticket.results || ticket.status === 'pending_review' ? `<div class="phase-actions"><button class="btn small primary" type="button" data-dashboard-action="review-ticket" data-ticket-id="${esc(ticket.id)}" ${state.demo ? 'disabled' : ''}>Review Complete Result</button></div>` : ''}
       </article>`).join('') : `<div class="empty"><div><span class="rune">‡</span><strong>No tickets filed</strong><small>Drop a report-only Markdown ticket into the configured vault directory.</small></div></div>`;
+      replaceHTML('tickets', $('#ticketList'), JSON.stringify([state.demo, tickets]), ticketHtml);
 
       $('#learningCount').textContent = `${state.learnings?.count || 0} entr${state.learnings?.count === 1 ? 'y' : 'ies'}`;
-      $('#learningList').innerHTML = learningEntries.length ? learningEntries.slice().reverse().map(entry => `<div class="learning-entry">${esc(entry)}</div>`).join('') : `<div class="empty"><div><span class="rune">✥</span><strong>No learnings captured</strong><small>Record durable patterns here; Kevin remains the curator.</small></div></div>`;
+      const learningHtml = learningEntries.length ? learningEntries.slice().reverse().map(entry => `<div class="learning-entry">${esc(entry)}</div>`).join('') : `<div class="empty"><div><span class="rune">✥</span><strong>No learnings captured</strong><small>Record durable patterns here; Kevin remains the curator.</small></div></div>`;
+      replaceHTML('learnings', $('#learningList'), JSON.stringify(learningEntries), learningHtml);
     }
 
     function renderAll() {
@@ -980,33 +1125,123 @@
       renderPhaseFive(); renderProviders(); renderDeployments(); renderLive();
     }
 
+    function invalidateTicketReview(message) {
+      if (!state.reviewTicket) return;
+      closeTicketReview();
+      toast(message, true);
+      setTimeout(() => $('#phase-five').focus(), 0);
+    }
+    function reconcileTicketReview(tickets) {
+      if (!state.reviewTicket) return;
+      const current = tickets.find(item => item.id === state.reviewTicket.id);
+      if (!current || ticketSignature(current) !== state.reviewTicketSignature) {
+        invalidateTicketReview('Ticket changed while under review. Reopen it and inspect the current result.');
+      }
+    }
+    function invalidateDeploymentReview(message) {
+      if (!state.reviewDeployment) return;
+      closeDeploymentReview();
+      toast(message, true);
+      setTimeout(() => $('#deployment-rites').focus(), 0);
+    }
+    function reconcileDeploymentReview(deployments) {
+      if (!state.reviewDeployment) return;
+      const current = deployments.find(
+        item => (item.id || item.deployment_id) === (state.reviewDeployment.id || state.reviewDeployment.deployment_id)
+      );
+      if (!current || deploymentSignature(current) !== state.reviewDeploymentSignature) {
+        invalidateDeploymentReview('Deployment request changed while under review. Reopen it before deciding.');
+      }
+    }
+
     const SLICE_SPECS = [
       ['registry','/api/providers', value => value && Array.isArray(value.providers) && Array.isArray(value.agents), value => { state.registry = value; }],
       ['status','/api/status', value => value && !value.error && typeof value === 'object', value => {
-        if (state.globalStopOverride) {
-          const generated = Date.parse(value.generated_at || '');
-          if (Number.isFinite(generated) && generated >= state.globalStopOverride.at) state.globalStopOverride = null;
-        }
+        // This fetch starts after the successful mutation and status_payload()
+        // overlays the live disk stop, so it—not the cached snapshot timestamp—
+        // is authoritative.
+        state.globalStopOverride = null;
         state.status = value;
       }],
       ['orders','/api/dispatch/pending', Array.isArray, value => { state.orders = value; }],
       ['events','/api/events?limit=80', Array.isArray, value => { state.events = value; }],
-      ['deployments','/api/deployments', Array.isArray, value => { state.deployments = value; }],
+      ['deployments','/api/deployments', value => (
+        value && typeof value === 'object'
+        && Array.isArray(value.deployments)
+        && typeof value.degraded === 'boolean'
+        && Array.isArray(value.errors)
+        && value.errors.every(error => typeof error === 'string')
+      ), value => {
+        if (value.degraded) {
+          invalidateDeploymentReview('Deployment listing is degraded. Review closed without recording a decision.');
+        } else {
+          reconcileDeploymentReview(value.deployments);
+        }
+        state.deployments = value.deployments;
+      }],
       ['taskRuns','/api/task-runs?limit=80', Array.isArray, value => { state.taskRuns = value; }],
-      ['tickets','/api/tickets?limit=100', Array.isArray, value => { state.tickets = value; }],
+      ['tickets','/api/tickets?limit=100', Array.isArray, value => {
+        reconcileTicketReview(value);
+        state.tickets = value;
+      }],
       ['learnings','/api/learnings', value => value && Array.isArray(value.entries), value => { state.learnings = value; }],
       ['phase5','/api/phase5', value => value && typeof value === 'object', value => { state.phase5 = value; }]
     ];
 
-    async function readSlice(spec, signal) {
+    async function readSlice(spec, parentSignal) {
       const [name, url, validate] = spec;
+      const controller = new AbortController();
+      let timedOut = false;
+      const abortFromParent = () => controller.abort();
+      if (parentSignal.aborted) controller.abort();
+      else parentSignal.addEventListener('abort', abortFromParent, {once:true});
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, SLICE_TIMEOUT_MS);
       try {
-        const value = await getJSON(url, {signal});
+        const value = await getJSON(url, {signal:controller.signal});
         if (!validate(value)) throw new Error(`${name} returned an unexpected shape`);
         return {name, ok:true, value};
       } catch (error) {
-        return {name, ok:false, error:error.name === 'AbortError' ? 'request superseded' : error.message};
+        return {
+          name,
+          ok:false,
+          error:timedOut ? 'request timed out' : error.name === 'AbortError' ? 'request superseded' : error.message
+        };
+      } finally {
+        clearTimeout(timeout);
+        parentSignal.removeEventListener('abort', abortFromParent);
       }
+    }
+
+    function applySliceResult(result, generation) {
+      if (generation !== state.refreshGeneration) return;
+      const spec = SLICE_SPECS.find(item => item[0] === result.name);
+      if (result.ok) {
+        spec[3](result.value);
+        const deploymentDegraded = result.name === 'deployments' && result.value.degraded;
+        if (deploymentDegraded) {
+          const previous = state.slices[result.name] || {};
+          state.slices[result.name] = {
+            ...previous,
+            attempted:true,
+            ok:false,
+            error:result.value.errors.join('; ') || 'deployment listing is degraded'
+          };
+        } else {
+          state.slices[result.name] = {attempted:true, ok:true, lastSuccess:Date.now(), error:''};
+        }
+      } else {
+        const previous = state.slices[result.name] || {};
+        state.slices[result.name] = {...previous, attempted:true, ok:false, error:result.error};
+        if (result.name === 'tickets') {
+          invalidateTicketReview('Ticket state is unavailable. Review closed without recording a decision.');
+        } else if (result.name === 'deployments') {
+          invalidateDeploymentReview('Deployment state is unavailable. Review closed without recording a decision.');
+        }
+      }
+      requestRender();
     }
 
     async function refresh() {
@@ -1014,22 +1249,19 @@
       if (state.refreshController) state.refreshController.abort();
       const controller = new AbortController();
       state.refreshController = controller;
-      const results = await Promise.all(SLICE_SPECS.map(spec => readSlice(spec, controller.signal)));
-      if (generation !== state.refreshGeneration) return;
-      results.forEach(result => {
-        const spec = SLICE_SPECS.find(item => item[0] === result.name);
-        if (result.ok) {
-          spec[3](result.value);
-          state.slices[result.name] = {attempted:true, ok:true, lastSuccess:Date.now(), error:''};
-        } else {
-          const previous = state.slices[result.name] || {};
-          state.slices[result.name] = {...previous, attempted:true, ok:false, error:result.error};
-        }
-      });
-      renderAll();
+      await Promise.all(SLICE_SPECS.map(async spec => {
+        const result = await readSlice(spec, controller.signal);
+        applySliceResult(result, generation);
+      }));
+      if (generation === state.refreshGeneration) requestRender();
     }
 
     function openOrderModal() {
+      if (!allowLiveMutation()) return;
+      if (!registeredAgents().length) {
+        toast('No registered agents are available; no order can be issued', true);
+        return;
+      }
       state.orderFocus = document.activeElement;
       renderAgentOptions();
       $('#orderForm').reset();
@@ -1051,8 +1283,17 @@
     }
     async function submitOrder(event) {
       event.preventDefault();
+      if (!allowLiveMutation()) {
+        setOrderFeedback('Demo mode is read-only; no order was queued.');
+        return;
+      }
       const button = $('#submitOrderBtn');
       const selected = agent($('#orderAgent').value);
+      if (!selected) {
+        closeOrderModal();
+        toast('No registered agent is available; no order was queued', true);
+        return;
+      }
       if (selected?.paused) {
         const message = `${selected.name} is holding new orders. Release Orders in Vox Obscura or choose another agent.`;
         setOrderFeedback(message);
@@ -1078,10 +1319,14 @@
         setOrderFeedback(message);
         toast(message, true);
       }
-      finally { button.disabled = false; button.textContent = 'Seal & Queue Order'; }
+      finally {
+        button.disabled = state.demo || registeredAgents().length === 0;
+        button.textContent = 'Seal & Queue Order';
+      }
     }
 
     async function cancelOrder(requestId) {
+      if (!allowLiveMutation()) return;
       if (!validActionId(requestId)) return toast('Order identifier is invalid; no action was taken', true);
       const ok = await ask('Cancel queued order?', 'The sealed order will be removed before it reaches an agent.', 'Cancel Order');
       if (!ok) return;
@@ -1092,29 +1337,35 @@
     function selectAgent(id) { state.selectedAgent = id; renderLive(true); }
     function voxKey(event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendFollowUp(); } }
     async function sendFollowUp() {
+      if (!allowLiveMutation() || state.voxSending) return;
       const selected = currentAgent(), input = $('#voxInput').value.trim();
       if (!selected || !input) return toast('Write an instruction for the selected agent', true);
-      $('#sendVox').disabled = true;
+      state.voxSending = true;
+      renderLiveIdentity();
       try { const result = await postJSON('/api/agent/send', {session:selected.session || selected.id, input, submit:true}); if (!result.ok) throw new Error(result.body.error || 'Vox transmission failed'); $('#voxInput').value=''; toast(`Transmission sent to ${selected.name}`); setTimeout(() => renderLive(true), 800); }
       catch (error) { toast(error.message, true); }
-      finally { $('#sendVox').disabled = false; }
+      finally { state.voxSending = false; renderLiveIdentity(); }
     }
     async function clearLive() {
+      if (!allowLiveMutation()) return;
       const selected = currentAgent(); if (!selected) return;
       const ok = await ask('Clear the vox context?', `This sends /clear to ${selected.name}.`, 'Clear Vox'); if (!ok) return;
       try { const result = await postJSON('/api/agent/clear', {session:selected.session || selected.id}); if (!result.ok) throw new Error(result.body.error || 'Clear failed'); toast(`Vox cleared for ${selected.name}`); setTimeout(() => renderLive(true), 800); }
       catch (error) { toast(error.message, true); }
     }
     async function togglePause() {
+      if (!allowLiveMutation()) return;
       const selected = currentAgent(); if (!selected) return;
       const action = selected.paused ? 'resume' : 'pause';
       try { const result = await postJSON('/api/agent/control', {agent:selected.id, action}); if (!result.ok) throw new Error(result.body.error || 'Control rite failed'); toast(`${selected.name} ${action === 'pause' ? 'will receive no new orders' : 'may receive orders again'}`); await refresh(); }
       catch (error) { toast(error.message, true); }
     }
     async function confirmAgentAction(action) {
+      if (!allowLiveMutation()) return;
       const selected = currentAgent(); if (!selected) return;
-      const copy = action === 'interrupt' ? `Interrupt ${selected.name}'s active task? Unsaved work may be left in its current state.` : `Awaken ${selected.name}? This only succeeds when its registered tmux session is offline.`;
-      if (!await ask(`${action === 'interrupt' ? 'Interrupt' : 'Awaken'} ${selected.name}?`, copy, action === 'interrupt' ? 'Interrupt' : 'Awaken')) return;
+      if (action !== 'restart') return toast('Direct interrupt is unavailable until cooperative halt is implemented', true);
+      const copy = `Awaken ${selected.name}? This only succeeds when its registered tmux session is offline.`;
+      if (!await ask(`Awaken ${selected.name}?`, copy, 'Awaken')) return;
       try { const result = await postJSON('/api/agent/control', {agent:selected.id, action}); if (!result.ok) throw new Error(result.body.error || 'Control rite failed'); toast(`${selected.name}: ${result.body.status}`); await refresh(); }
       catch (error) { toast(error.message, true); }
     }
@@ -1124,6 +1375,7 @@
       const ticket = state.tickets.find(item => item.id === ticketId);
       if (!ticket) return toast('This ticket is no longer available', true);
       state.reviewTicket = ticket;
+      state.reviewTicketSignature = ticketSignature(ticket);
       state.reviewFocus = trigger || document.activeElement;
       $('#ticketReviewId').textContent = ticket.id;
       $('#ticketReviewStatus').textContent = String(ticket.status || 'unknown').replaceAll('_',' ');
@@ -1132,9 +1384,11 @@
       $('#ticketReviewGoal').textContent = (ticket.goal || 'No goal recorded').slice(0, 1000);
       $('#ticketReviewResult').textContent = ticket.results || 'No captured result is available. Do not accept this ticket.';
       const pending = ticket.status === 'pending_review';
+      const currentVersion = validReviewVersion(ticket.review_version);
       $('#ticketReviewAccept').hidden = !pending;
       $('#ticketReviewBlock').hidden = !pending;
-      $('#ticketReviewAccept').disabled = !ticket.results;
+      $('#ticketReviewAccept').disabled = state.demo || !ticket.results || !currentVersion;
+      $('#ticketReviewBlock').disabled = state.demo || !currentVersion;
       $('#ticketReviewModal').showModal();
       setTimeout(() => $('#ticketReviewResult').focus(), 30);
     }
@@ -1142,31 +1396,123 @@
     function closeTicketReview() {
       if ($('#ticketReviewModal').open) $('#ticketReviewModal').close();
       state.reviewTicket = null;
+      state.reviewTicketSignature = '';
       const restore = state.reviewFocus;
       state.reviewFocus = null;
       restoreFocus(restore, '#phase-five');
     }
 
     async function submitTicketReview(decision) {
+      if (!allowLiveMutation()) return;
       const ticket = state.reviewTicket;
-      if (!ticket || ticket.status !== 'pending_review' || !['done','blocked'].includes(decision) || !validActionId(ticket.id)) return toast('No actionable ticket review is open', true);
+      if (
+        !ticket || ticket.status !== 'pending_review'
+        || !['done','blocked'].includes(decision)
+        || !validActionId(ticket.id)
+        || !validReviewVersion(ticket.review_version)
+      ) return toast('No actionable ticket review with a current version is open', true);
+      const current = state.tickets.find(item => item.id === ticket.id);
+      if (!current || ticketSignature(current) !== state.reviewTicketSignature) {
+        invalidateTicketReview('Ticket changed while under review. Reopen it before deciding.');
+        return;
+      }
       const buttons = [$('#ticketReviewAccept'), $('#ticketReviewBlock')];
       buttons.forEach(button => { button.disabled = true; });
       try {
-        const result = await postJSON('/api/ticket/review', {ticket_id:ticket.id, decision});
-        if (!result.ok) throw new Error(result.body.error || 'Ticket review failed');
+        const result = await postJSON('/api/ticket/review', {
+          ticket_id:ticket.id,
+          decision,
+          review_version:ticket.review_version
+        });
+        if (!result.ok) {
+          if (result.status === 409) {
+            closeTicketReview();
+            await refresh();
+          }
+          throw new Error(result.body.error || 'Ticket review failed');
+        }
         const id = ticket.id;
         closeTicketReview();
         toast(`Ticket ${id} marked ${decision}`);
         await refresh();
+        $('#phase-five').focus();
       } catch (error) { toast(error.message, true); }
       finally {
-        buttons.forEach(button => { button.disabled = false; });
+        buttons.forEach(button => { button.disabled = state.demo; });
         if (state.reviewTicket && !state.reviewTicket.results) $('#ticketReviewAccept').disabled = true;
       }
     }
 
+    function openDeploymentReview(deploymentId, trigger) {
+      if (!validActionId(deploymentId)) return toast('Deployment identifier is invalid; no action was taken', true);
+      if (!state.slices.deployments?.ok) return toast('Deployment state is not current; no decision can be recorded', true);
+      const item = state.deployments.find(entry => (entry.id || entry.deployment_id) === deploymentId);
+      if (!item) return toast('This deployment request is no longer available', true);
+      state.reviewDeployment = item;
+      state.reviewDeploymentSignature = deploymentSignature(item);
+      state.deploymentReviewFocus = trigger || document.activeElement;
+      $('#deploymentReviewId').textContent = item.id || item.deployment_id;
+      $('#deploymentReviewRisk').textContent = item.risk || 'review';
+      $('#deploymentReviewRepository').textContent = item.repository || 'Not recorded';
+      $('#deploymentReviewRef').textContent = item.ref || 'Not recorded';
+      $('#deploymentReviewRequester').textContent = item.requested_by || 'Not recorded';
+      $('#deploymentReviewCreated').textContent = item.created_at || 'Not recorded';
+      $('#deploymentReviewSummary').textContent = item.summary || 'No summary recorded. Do not sanction this deployment.';
+      $('#deploymentReviewChecks').textContent = item.checks || 'No checks recorded.';
+      $('#deploymentReviewRollback').textContent = item.rollback || 'No rollback plan recorded.';
+      $('#deploymentReviewApprove').disabled = state.demo;
+      $('#deploymentReviewDeny').disabled = state.demo;
+      $('#deploymentReviewModal').showModal();
+      setTimeout(() => $('#deploymentReviewSummary').focus(), 30);
+    }
+
+    function closeDeploymentReview() {
+      if ($('#deploymentReviewModal').open) $('#deploymentReviewModal').close();
+      state.reviewDeployment = null;
+      state.reviewDeploymentSignature = '';
+      const restore = state.deploymentReviewFocus;
+      state.deploymentReviewFocus = null;
+      restoreFocus(restore, '#deployment-rites');
+    }
+
+    async function submitDeploymentReview(decision) {
+      if (!allowLiveMutation()) return;
+      const item = state.reviewDeployment;
+      const id = item?.id || item?.deployment_id || '';
+      const current = state.deployments.find(entry => (entry.id || entry.deployment_id) === id);
+      if (
+        !item || !validActionId(id) || !['approve','deny'].includes(decision)
+        || !state.slices.deployments?.ok
+        || !current || deploymentSignature(current) !== state.reviewDeploymentSignature
+      ) {
+        invalidateDeploymentReview('Deployment request changed or became unavailable. Reopen it before deciding.');
+        return;
+      }
+      const confirmation = `${item.title || id} · ${item.risk || 'review'} risk · ${item.repository || 'repository not recorded'} @ ${item.ref || 'ref not recorded'}.`;
+      if (!await ask(`${decision === 'approve' ? 'Sanction' : 'Deny'} deployment?`, confirmation, decision === 'approve' ? 'Sanction' : 'Deny')) return;
+      const stillCurrent = state.reviewDeployment
+        && state.deployments.find(entry => (entry.id || entry.deployment_id) === id);
+      if (!stillCurrent || deploymentSignature(stillCurrent) !== state.reviewDeploymentSignature) {
+        invalidateDeploymentReview('Deployment request changed during confirmation. Reopen it before deciding.');
+        return;
+      }
+      const buttons = [$('#deploymentReviewApprove'), $('#deploymentReviewDeny')];
+      buttons.forEach(button => { button.disabled = true; });
+      try {
+        const result = await postJSON('/api/deploy/decision', {deployment_id:id, decision});
+        if (!result.ok) throw new Error(result.body.error || 'Decision failed');
+        closeDeploymentReview();
+        toast(`Deployment ${decision === 'approve' ? 'sanctioned' : 'denied'}`);
+        await refresh();
+        $('#deployment-rites').focus();
+      } catch (error) { toast(error.message, true); }
+      finally {
+        buttons.forEach(button => { button.disabled = state.demo; });
+      }
+    }
+
     async function addLearning() {
+      if (!allowLiveMutation()) return;
       const text = $('#learningText').value.trim();
       const tags = $('#learningTags').value.trim() || 'general';
       if (!text) return toast('Write a durable learning first', true);
@@ -1179,10 +1525,11 @@
         toast('Learning recorded for human curation');
         await refresh();
       } catch (error) { toast(error.message, true); }
-      finally { $('#addLearningBtn').disabled = false; }
+      finally { $('#addLearningBtn').disabled = state.demo; }
     }
 
     async function toggleGlobalStop() {
+      if (!allowLiveMutation()) return;
       const stop = globalStopState();
       const stopped = stop.known && stop.value;
       const action = stopped ? 'release' : 'engage';
@@ -1204,14 +1551,6 @@
       }
     }
 
-    async function decideDeployment(id, decision) {
-      if (!validActionId(id) || !['approve','deny'].includes(decision)) return toast('Deployment decision identifiers are invalid; no action was taken', true);
-      const ok = await ask(`${decision === 'approve' ? 'Sanction' : 'Deny'} deployment?`, `This records an explicit ${decision} decision for deployment ${id}.`, decision === 'approve' ? 'Sanction' : 'Deny');
-      if (!ok) return;
-      try { const result = await postJSON('/api/deploy/decision', {deployment_id:id, decision}); if (!result.ok) throw new Error(result.body.error || 'Decision failed'); toast(`Deployment ${decision === 'approve' ? 'sanctioned' : 'denied'}`); await refresh(); }
-      catch (error) { toast(error.message, true); }
-    }
-
     function ask(title, copy, accept='Sanction') {
       return new Promise(resolve => {
         state.confirm = resolve; state.confirmFocus = document.activeElement; $('#confirmTitle').textContent = title; $('#confirmCopy').textContent = copy; $('#confirmAccept').textContent = accept; $('#confirmModal').showModal(); setTimeout(() => $('#confirmAccept').focus(), 30);
@@ -1227,6 +1566,7 @@
     $('#confirmModal').addEventListener('cancel', event => { event.preventDefault(); closeConfirm(false); });
     $('#orderModal').addEventListener('cancel', event => { event.preventDefault(); closeOrderModal(); });
     $('#ticketReviewModal').addEventListener('cancel', event => { event.preventDefault(); closeTicketReview(); });
+    $('#deploymentReviewModal').addEventListener('cancel', event => { event.preventDefault(); closeDeploymentReview(); });
     document.addEventListener('click', event => {
       const button = event.target.closest('[data-dashboard-action]');
       if (!button || button.disabled) return;
@@ -1239,10 +1579,10 @@
         const id = button.dataset.ticketId || '';
         if (!validActionId(id)) return toast('Ticket identifier is invalid; no action was taken', true);
         openTicketReview(id, button);
-      } else if (action === 'deployment-decision') {
-        const id = button.dataset.deploymentId || '', decision = button.dataset.decision || '';
-        if (!validActionId(id) || !['approve','deny'].includes(decision)) return toast('Deployment decision identifiers are invalid; no action was taken', true);
-        decideDeployment(id, decision);
+      } else if (action === 'review-deployment') {
+        const id = button.dataset.deploymentId || '';
+        if (!validActionId(id)) return toast('Deployment identifier is invalid; no action was taken', true);
+        openDeploymentReview(id, button);
       }
     });
 

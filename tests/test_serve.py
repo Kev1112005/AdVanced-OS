@@ -71,6 +71,7 @@ class MissionControlTests(unittest.TestCase):
             "learnings_lock": base / "hermes-learnings.lock",
             "dispatch_lock": base / "dispatch-consumer.lock",
             "stop": base / "stop",
+            "stop_lock": base / "global-stop.lock",
         }
         self.paths["registry"].write_text(json.dumps({
             "version": 1,
@@ -104,13 +105,19 @@ class MissionControlTests(unittest.TestCase):
         mission_control.LEARNINGS_LOCK = str(self.paths["learnings_lock"])
         mission_control.DISPATCH_LOCK = str(self.paths["dispatch_lock"])
         self.old_stop = os.environ.get("HERMES_STOP_FILE")
+        self.old_stop_lock = os.environ.get("HERMES_STOP_LOCK")
         os.environ["HERMES_STOP_FILE"] = str(self.paths["stop"])
+        os.environ["HERMES_STOP_LOCK"] = str(self.paths["stop_lock"])
 
     def tearDown(self):
         if self.old_stop is None:
             os.environ.pop("HERMES_STOP_FILE", None)
         else:
             os.environ["HERMES_STOP_FILE"] = self.old_stop
+        if self.old_stop_lock is None:
+            os.environ.pop("HERMES_STOP_LOCK", None)
+        else:
+            os.environ["HERMES_STOP_LOCK"] = self.old_stop_lock
         self.temp.cleanup()
 
     def write_deployment_request(self, deployment_id):
@@ -366,6 +373,41 @@ class MissionControlTests(unittest.TestCase):
         self.assertEqual(visible[0]["status"], "queued")
         self.assertEqual(visible[0]["summary"], "Implement the provider adapter.")
 
+    def test_acceptance_criteria_rejects_nested_or_unbounded_values(self):
+        invalid_values = (
+            {"not": "a list"},
+            ["valid", ["nested"]],
+            ["criterion"] * 51,
+            ["x" * 1001],
+        )
+        for value in invalid_values:
+            with self.subTest(value_type=type(value).__name__):
+                code, response = mission_control.create_dispatch(json.dumps({
+                    "agent": "azrael",
+                    "prompt": "Validate the order contract.",
+                    "acceptance_criteria": value,
+                }).encode())
+                self.assertEqual(code, 400)
+                self.assertIn("acceptance", response["error"])
+        self.assertFalse(self.paths["requests"].exists())
+
+    def test_dispatch_success_survives_event_telemetry_failure(self):
+        with mock.patch.object(
+            mission_control,
+            "append_event",
+            side_effect=OSError("event volume unavailable"),
+        ):
+            code, response = mission_control.create_dispatch(json.dumps({
+                "agent": "azrael",
+                "title": "Durable without telemetry",
+                "prompt": "Persist exactly one order.",
+            }).encode())
+        self.assertEqual(code, 200)
+        self.assertIn("telemetry failed", response["warning"])
+        self.assertTrue(
+            (self.paths["requests"] / f"{response['request_id']}.json").exists()
+        )
+
     def test_report_order_requires_a_captured_result(self):
         code, response = mission_control.create_dispatch(json.dumps({
             "agent": "azrael",
@@ -504,6 +546,53 @@ class MissionControlTests(unittest.TestCase):
         self.assertEqual(code, 403)
         self.assertIn("provider registry", response["error"])
 
+    def test_tmux_send_sequence_is_serialized_per_canonical_session(self):
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        operation_lock = mission_control.session_operation_lock("hermes")
+        started = threading.Event()
+        result = []
+
+        def send():
+            started.set()
+            result.append(mission_control.send_keys(json.dumps({
+                "session": "azrael",
+                "input": "status",
+                "submit": False,
+            }).encode()))
+
+        with (
+            mock.patch.object(mission_control, "_session_alive", return_value=True),
+            mock.patch.object(
+                mission_control.subprocess, "run", return_value=completed
+            ) as run,
+        ):
+            operation_lock.acquire()
+            try:
+                thread = threading.Thread(target=send)
+                thread.start()
+                self.assertTrue(started.wait(timeout=1))
+                self.assertFalse(run.called)
+            finally:
+                operation_lock.release()
+            thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result[0][0], 200)
+        self.assertEqual(run.call_count, 1)
+
+    def test_durable_agent_control_survives_event_telemetry_failure(self):
+        with mock.patch.object(
+            mission_control,
+            "append_event",
+            side_effect=OSError("event volume unavailable"),
+        ):
+            code, response = mission_control.control_agent(json.dumps({
+                "agent": "azrael",
+                "action": "pause",
+            }).encode())
+        self.assertEqual(code, 200)
+        self.assertIn("telemetry failed", response["warning"])
+        self.assertTrue((self.paths["paused"] / "azrael").is_file())
+
     def test_agent_session_endpoint_denies_unknown_registry_target(self):
         with running_server() as base:
             status, _, payload = http_request(
@@ -538,11 +627,109 @@ class MissionControlTests(unittest.TestCase):
             "## Results\nChecks passed.\n",
             encoding="utf-8",
         )
+        listed = mission_control.list_tickets()
         code, response = mission_control.review_ticket(json.dumps({
-            "ticket_id": "ticket-1", "decision": "done",
+            "ticket_id": "ticket-1",
+            "decision": "done",
+            "review_version": listed[0]["review_version"],
         }).encode())
         self.assertEqual((code, response["status"]), (200, "done"))
+        self.assertFalse(response["idempotent"])
         self.assertIn("status: done", ticket.read_text(encoding="utf-8"))
+
+    def test_ticket_terminal_reviews_are_versioned_idempotent_and_immutable(self):
+        self.paths["tickets"].mkdir(parents=True)
+        ticket = self.paths["tickets"] / "ticket-blocked.md"
+        ticket.write_text(
+            "---\n"
+            "id: ticket-blocked\n"
+            "status: pending_review\n"
+            "created: 2026-07-24T00:00:00Z\n"
+            "---\n\n"
+            "## Goal\nReview safely.\n",
+            encoding="utf-8",
+        )
+        version = mission_control.list_tickets()[0]["review_version"]
+        body = json.dumps({
+            "ticket_id": "ticket-blocked",
+            "decision": "blocked",
+            "review_version": version,
+        }).encode()
+        code, response = mission_control.review_ticket(body)
+        self.assertEqual((code, response["idempotent"]), (200, False))
+
+        code, response = mission_control.review_ticket(body)
+        self.assertEqual((code, response["idempotent"]), (200, True))
+        code, response = mission_control.review_ticket(json.dumps({
+            "ticket_id": "ticket-blocked",
+            "decision": "done",
+            "review_version": version,
+        }).encode())
+        self.assertEqual(code, 409)
+        self.assertIn("already blocked", response["error"])
+        self.assertIn("status: blocked", ticket.read_text(encoding="utf-8"))
+
+    def test_stale_ticket_review_cannot_replace_newer_content(self):
+        self.paths["tickets"].mkdir(parents=True)
+        ticket = self.paths["tickets"] / "ticket-stale.md"
+        ticket.write_text(
+            "---\n"
+            "id: ticket-stale\n"
+            "status: pending_review\n"
+            "created: 2026-07-24T00:00:00Z\n"
+            "---\n\n"
+            "## Goal\nReview safely.\n",
+            encoding="utf-8",
+        )
+        stale_version = mission_control.list_tickets()[0]["review_version"]
+        with ticket.open("a", encoding="utf-8") as handle:
+            handle.write("\nOperator-visible update.\n")
+        code, response = mission_control.review_ticket(json.dumps({
+            "ticket_id": "ticket-stale",
+            "decision": "done",
+            "review_version": stale_version,
+        }).encode())
+        self.assertEqual(code, 409)
+        self.assertIn("changed", response["error"])
+        self.assertIn(
+            "status: pending_review", ticket.read_text(encoding="utf-8")
+        )
+
+    def test_ticket_review_requires_pending_state_and_current_version(self):
+        self.paths["tickets"].mkdir(parents=True)
+        pending = self.paths["tickets"] / "ticket-pending.md"
+        pending.write_text(
+            "---\nid: ticket-pending\nstatus: pending_review\n---\n\n"
+            "## Goal\nReview.\n",
+            encoding="utf-8",
+        )
+        code, response = mission_control.review_ticket(json.dumps({
+            "ticket_id": "ticket-pending",
+            "decision": "done",
+        }).encode())
+        self.assertEqual(code, 400)
+        self.assertIn("review_version", response["error"])
+
+        active = self.paths["tickets"] / "ticket-active.md"
+        active.write_text(
+            "---\nid: ticket-active\nstatus: active\n---\n\n"
+            "## Goal\nStill running.\n",
+            encoding="utf-8",
+        )
+        active_version = next(
+            item["review_version"]
+            for item in mission_control.list_tickets()
+            if item["id"] == "ticket-active"
+        )
+        for decision in ("done", "blocked"):
+            with self.subTest(decision=decision):
+                code, response = mission_control.review_ticket(json.dumps({
+                    "ticket_id": "ticket-active",
+                    "decision": decision,
+                    "review_version": active_version,
+                }).encode())
+                self.assertEqual(code, 409)
+                self.assertIn("pending_review", response["error"])
 
     def test_ticket_listing_rejects_unsafe_surfaced_id(self):
         self.paths["tickets"].mkdir(parents=True)
@@ -582,6 +769,59 @@ class MissionControlTests(unittest.TestCase):
         )
         self.assertEqual(state["status"], "cancelled")
         self.assertTrue(state["cancelled_at"])
+
+    def test_cancel_rolls_queue_back_when_ledger_transition_fails(self):
+        code, created = mission_control.create_dispatch(json.dumps({
+            "agent": "azrael",
+            "title": "Rollback cancellation",
+            "prompt": "Remain queued if the ledger cannot transition.",
+        }).encode())
+        self.assertEqual(code, 200)
+        queue_path = (
+            self.paths["requests"] / f"{created['request_id']}.json"
+        )
+        state_path = (
+            self.paths["task_runs"] / created["request_id"] / "state.json"
+        )
+        with mock.patch.object(
+            mission_control,
+            "update_task_run_state",
+            side_effect=OSError("ledger unavailable"),
+        ):
+            code, response = mission_control.cancel_dispatch(json.dumps({
+                "request_id": created["request_id"],
+            }).encode())
+        self.assertEqual(code, 500)
+        self.assertIn("rolled back", response["error"])
+        self.assertTrue(queue_path.exists())
+        self.assertEqual(
+            json.loads(state_path.read_text(encoding="utf-8"))["status"],
+            "queued",
+        )
+        self.assertEqual(
+            list(self.paths["requests"].glob(".cancel-*.json")), []
+        )
+
+    def test_cancel_success_survives_event_telemetry_failure(self):
+        code, created = mission_control.create_dispatch(json.dumps({
+            "agent": "azrael",
+            "title": "Cancel durably",
+            "prompt": "Telemetry must not change the result.",
+        }).encode())
+        self.assertEqual(code, 200)
+        with mock.patch.object(
+            mission_control,
+            "append_event",
+            side_effect=OSError("event volume unavailable"),
+        ):
+            code, response = mission_control.cancel_dispatch(json.dumps({
+                "request_id": created["request_id"],
+            }).encode())
+        self.assertEqual(code, 200)
+        self.assertIn("telemetry failed", response["warning"])
+        self.assertFalse(
+            (self.paths["requests"] / f"{created['request_id']}.json").exists()
+        )
 
     def test_cancel_returns_conflict_while_serial_consumer_owns_lock(self):
         code, created = mission_control.create_dispatch(json.dumps({
@@ -664,10 +904,47 @@ class MissionControlTests(unittest.TestCase):
             "[]", encoding="utf-8"
         )
         self.write_deployment_request("release-valid")
+        code, response = mission_control.list_deployments()
+        self.assertEqual(code, 200)
         self.assertEqual(
-            [item["id"] for item in mission_control.list_deployments()],
+            [item["id"] for item in response["deployments"]],
             ["release-valid"],
         )
+        self.assertTrue(response["degraded"])
+        self.assertTrue(response["errors"])
+
+    def test_deployment_listing_reports_storage_failure(self):
+        with mock.patch.object(
+            mission_control.os,
+            "listdir",
+            side_effect=PermissionError("not readable"),
+        ):
+            code, response = mission_control.list_deployments()
+        self.assertEqual(code, 503)
+        self.assertTrue(response["degraded"])
+        self.assertIn("unavailable", response["errors"][0])
+
+    def test_deployment_decision_storage_and_unicode_errors_are_controlled(self):
+        self.write_deployment_request("release-errors")
+        with mock.patch.object(
+            mission_control,
+            "record_decision",
+            side_effect=OSError("disk unavailable"),
+        ):
+            code, response = mission_control.deployment_decision(json.dumps({
+                "deployment_id": "release-errors",
+                "decision": "approve",
+            }).encode())
+        self.assertEqual(code, 500)
+        self.assertIn("storage failed", response["error"])
+
+        code, response = mission_control.deployment_decision(json.dumps({
+            "deployment_id": "release-errors",
+            "decision": "approve",
+            "reason": "\ud800",
+        }).encode())
+        self.assertEqual(code, 400)
+        self.assertIn("UTF-8", response["error"])
 
     def test_deployment_decision_uses_the_shared_strict_id_contract(self):
         code, response = mission_control.deployment_decision(json.dumps({
@@ -758,6 +1035,69 @@ class MissionControlTests(unittest.TestCase):
         self.assertFalse(status["circuit_breaker"]["global_stop"])
         self.assertEqual(status["circuit_breaker"]["status"], "PASS")
 
+    def test_invalid_stop_nodes_fail_closed_for_status_and_dispatch(self):
+        def assert_fail_closed():
+            status = mission_control.status_payload()
+            circuit = status["circuit_breaker"]
+            self.assertTrue(circuit["global_stop"])
+            self.assertFalse(circuit["global_stop_valid"])
+            self.assertEqual(circuit["status"], "TRIPPED")
+            code, response = mission_control.create_dispatch(json.dumps({
+                "agent": "azrael",
+                "title": "Must not queue",
+                "prompt": "Fail closed.",
+            }).encode())
+            self.assertEqual(code, 423)
+            self.assertFalse(response["global_stop_valid"])
+            with mock.patch.object(mission_control.subprocess, "run") as run:
+                code, response = mission_control.global_stop_control(json.dumps({
+                    "action": "release",
+                }).encode())
+            self.assertEqual(code, 409)
+            self.assertIn("fail-closed", response["error"])
+            run.assert_not_called()
+
+        with self.subTest(node="directory"):
+            self.paths["stop"].mkdir()
+            assert_fail_closed()
+            self.paths["stop"].rmdir()
+        with self.subTest(node="dangling-symlink"):
+            self.paths["stop"].symlink_to(
+                self.paths["stop"].with_name("missing-stop-target")
+            )
+            assert_fail_closed()
+            self.paths["stop"].unlink()
+
+    def test_concurrent_global_stop_requests_emit_one_state_edge(self):
+        results = []
+        start = threading.Barrier(3)
+
+        def engage():
+            start.wait()
+            results.append(mission_control.global_stop_control(json.dumps({
+                "action": "engage",
+                "reason": "Concurrent edge",
+            }).encode()))
+
+        threads = [threading.Thread(target=engage) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        start.wait()
+        for thread in threads:
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual([code for code, _ in results], [200, 200])
+        self.assertEqual(
+            sorted(payload["idempotent"] for _, payload in results),
+            [False, True],
+        )
+        self.assertEqual(
+            [event["event"] for event in mission_control.read_events(20)].count(
+                "stop"
+            ),
+            1,
+        )
+
     def test_global_stop_events_require_successful_state_change(self):
         code, response = mission_control.global_stop_control(json.dumps({
             "action": "engage", "reason": "First edge",
@@ -815,6 +1155,7 @@ class DeployApprovalScriptTests(unittest.TestCase):
         self.approvals = self.base / "approvals"
         self.events = self.base / "events.log"
         self.script = ROOT / "scripts" / "deploy-approval.sh"
+        self.helper = ROOT / "server" / "deployment_approval.py"
         self.env = {
             **os.environ,
             "HERMES_DEPLOY_REQUEST_DIR": str(self.deployments),
@@ -835,6 +1176,34 @@ class DeployApprovalScriptTests(unittest.TestCase):
             env={**self.env, **(extra_env or {})},
             timeout=5,
         )
+
+    def run_helper(self, command, deploy_dir, approval_dir, *extra):
+        return subprocess.run(
+            [
+                "python3",
+                str(self.helper),
+                command,
+                "--deploy-dir",
+                str(deploy_dir),
+                "--approval-dir",
+                str(approval_dir),
+                *extra,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+    @staticmethod
+    def write_helper_request(deploy_dir, deployment_id="release-node-error"):
+        deploy_dir.mkdir(parents=True, exist_ok=True)
+        deploy_dir.joinpath(f"{deployment_id}.json").write_text(json.dumps({
+            "id": deployment_id,
+            "title": "Wrong-node regression",
+            "summary": "Operational storage errors must be controlled",
+            "risk": "medium",
+            "created_at": "2026-07-24T00:00:00Z",
+        }), encoding="utf-8")
 
     def test_request_approval_and_gate_check_are_durable(self):
         created = self.run_script(
@@ -972,6 +1341,47 @@ class DeployApprovalScriptTests(unittest.TestCase):
         checked = self.run_script("check", "--id", "release-corrupt")
         self.assertEqual(checked.returncode, 3)
         self.assertEqual(json.loads(checked.stdout)["status"], "invalid")
+
+    def test_helper_commands_control_wrong_node_storage_errors(self):
+        deployment_id = "release-node-error"
+        wrong_deploy = self.base / "wrong-deploy-node"
+        wrong_deploy.write_text("not a directory", encoding="utf-8")
+        valid_approvals = self.base / "valid-approvals"
+
+        valid_deploy = self.base / "valid-deploy"
+        self.write_helper_request(valid_deploy, deployment_id)
+        wrong_approval = self.base / "wrong-approval-node"
+        wrong_approval.write_text("not a directory", encoding="utf-8")
+
+        def invoke(command, deploy_dir, approval_dir):
+            extra = []
+            if command in ("check", "status", "decide"):
+                extra.extend(("--id", deployment_id))
+            if command == "decide":
+                extra.extend(("--decision", "approve"))
+            return self.run_helper(
+                command, deploy_dir, approval_dir, *extra
+            )
+
+        for node, deploy_dir, approval_dir in (
+            ("deployment", wrong_deploy, valid_approvals),
+            ("approval", valid_deploy, wrong_approval),
+        ):
+            for command in ("check", "status", "list", "decide"):
+                with self.subTest(node=node, command=command):
+                    result = invoke(command, deploy_dir, approval_dir)
+                    self.assertEqual(result.returncode, 3)
+                    self.assertNotIn(
+                        "Traceback", result.stdout + result.stderr
+                    )
+                    if command == "check":
+                        payload = json.loads(result.stdout)
+                        self.assertEqual(payload["status"], "invalid")
+                        self.assertTrue(payload["unavailable"])
+                        self.assertIn("unavailable", payload["error"])
+                    else:
+                        self.assertEqual(result.stdout, "")
+                        self.assertIn("state unavailable", result.stderr)
 
     def test_request_succeeds_when_discord_notification_fails(self):
         binary_dir = self.base / "bin"

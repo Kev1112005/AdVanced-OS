@@ -111,7 +111,7 @@ class PipelineSafetyTests(unittest.TestCase):
         first = self.run_cmd("bash", str(PIPELINE_ADVANCE), check=False)
         self.assertEqual((pipeline / "state").read_text().strip(), "scaffolding")
         self.assertEqual(first.returncode, 0)
-        self.assertFalse((self.base / f"{pipeline_id}-scaffold.json").exists())
+        self.assertTrue(self.requests.is_file())
 
         self.requests.unlink()
         self.requests.mkdir()

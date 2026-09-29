@@ -6,6 +6,7 @@
 set -euo pipefail
 
 FLAG_FILE="${HERMES_STOP_FILE:-$HOME/.hermes/stop}"
+STOP_LOCK="${HERMES_STOP_LOCK:-$HOME/.hermes/global-stop.lock}"
 
 usage() {
   cat <<EOF
@@ -19,6 +20,7 @@ Usage:
 
 The flag never expires. Only an explicit clear releases the stop.
 Env: HERMES_STOP_FILE overrides flag path (default ~/.hermes/stop)
+     HERMES_STOP_LOCK overrides the mutation lock (default ~/.hermes/global-stop.lock)
 EOF
 }
 
@@ -31,9 +33,46 @@ clean_field() {
   printf '%s' "$value"
 }
 
+node_exists() {
+  [[ -e "$FLAG_FILE" || -L "$FLAG_FILE" ]]
+}
+
+valid_flag() {
+  [[ -f "$FLAG_FILE" && ! -L "$FLAG_FILE" ]]
+}
+
+fsync_parent() {
+  python3 - "$(dirname "$1")" <<'PY'
+import os
+import sys
+
+if not os.path.isdir(sys.argv[1]):
+    raise SystemExit(0)
+descriptor = os.open(sys.argv[1], os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
+}
+
+acquire_mutation_lock() {
+  if [[ "${HERMES_STOP_LOCK_HELD:-0}" == 1 ]]; then
+    return
+  fi
+  mkdir -p "$(dirname "$STOP_LOCK")"
+  exec 9>"$STOP_LOCK"
+  flock 9
+}
+
 cmd="${1:-}"
 case "$cmd" in
   set)
+    acquire_mutation_lock
+    if node_exists && ! valid_flag; then
+      echo "error: refusing to replace invalid stop node: $FLAG_FILE" >&2
+      exit 1
+    fi
     reason="$(clean_field "${2:-Manual stop — Kevin requested}")"
     set_by="$(clean_field "${USER:-kevin}")"
     mkdir -p "$(dirname "$FLAG_FILE")"
@@ -46,22 +85,29 @@ case "$cmd" in
       printf 'set_by: %s\n' "$set_by"
     } > "$temporary"
     mv -f "$temporary" "$FLAG_FILE"
+    fsync_parent "$FLAG_FILE"
     trap - EXIT
     echo "STOPPED: flag set at $FLAG_FILE"
     ;;
   clear)
+    acquire_mutation_lock
+    if [[ -d "$FLAG_FILE" && ! -L "$FLAG_FILE" ]]; then
+      echo "error: stop node is a directory; remove it explicitly after inspection" >&2
+      exit 1
+    fi
     rm -f "$FLAG_FILE"
+    fsync_parent "$FLAG_FILE"
     echo "RUNNING: flag cleared"
     ;;
   check)
-    if [[ -f "$FLAG_FILE" ]]; then
+    if node_exists; then
       echo "STOPPED"; exit 0
     else
       echo "RUNNING"; exit 1
     fi
     ;;
   status)
-    if [[ -f "$FLAG_FILE" ]]; then
+    if valid_flag; then
       python3 - "$FLAG_FILE" <<'PY'
 import json
 import pathlib
@@ -77,6 +123,28 @@ print(json.dumps({
     "stopped_at": fields.get("stopped_at") or None,
     "reason": fields.get("reason") or None,
     "set_by": fields.get("set_by") or None,
+}))
+PY
+    elif node_exists; then
+      python3 - "$FLAG_FILE" <<'PY'
+import json
+import os
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+if path.is_symlink():
+    kind = "symlink"
+elif path.is_dir():
+    kind = "directory"
+else:
+    kind = "non-regular node"
+print(json.dumps({
+    "status": "STOPPED",
+    "stopped_at": None,
+    "reason": f"Invalid stop node ({kind}) blocks dispatch until explicitly resolved",
+    "set_by": None,
+    "invalid": True,
 }))
 PY
     else

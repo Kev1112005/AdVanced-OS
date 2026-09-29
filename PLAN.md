@@ -136,7 +136,12 @@ A `~/hermes-learnings.md` file that accumulates cross-session patterns, gotchas,
 
 ### Phase 5e: Hermes-Run QA Gate (COMPLETE)
 
-After Claude finishes a task but before Hermes accepts delivery, Hermes evaluates the output against the task document's success criteria using shell commands. Commit landed? Tests pass? Required files changed? If criteria aren't met, Hermes sends the failure analysis back to Claude for another pass.
+After Claude finishes a task but before Hermes accepts delivery, Hermes
+evaluates the output against the task document's success criteria using shell
+commands. Commit landed? Tests pass? Required files changed? The result is
+immutable and visible to Kevin. A failed result does not trigger an autonomous
+correction loop; Kevin issues a new corrective order when another pass is
+appropriate.
 
 ### Phase 5f: Tool-Scoped Worker Profiles (LOW — half day, stretch)
 

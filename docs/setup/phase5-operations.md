@@ -37,6 +37,12 @@ that command after finishing; it writes a `qa` request and returns immediately.
 The serial consumer invokes `scripts/qa-gate.sh`, records `qa_pass` or `qa_fail`,
 and exposes the full check result in Mission Control.
 
+Before tmux delivery, the consumer registers the immutable QA contract,
+acquires the global disk-backed lane, and rechecks the complete circuit breaker.
+The lane remains occupied across polls and restarts until the exact order
+reaches terminal QA. Busy agents leave orders queued; they do not consume a
+retry budget or cause deletion.
+
 State lives in `~/.hermes/task-runs/<request-id>/`:
 
 ```text
@@ -50,6 +56,7 @@ Useful inspection:
 
 ```bash
 ./scripts/qa-gate.sh status --request-id REQUEST_ID
+./scripts/dispatch-lane.sh status
 ```
 
 Test commands are explicit operator input and execute with `bash -lc` in the
@@ -97,9 +104,19 @@ contract.
 
 ## Recovery
 
-- A global stop pauses both ticket intake and dispatch.
+- A global stop pauses both ticket intake and dispatch and never expires. Only
+  an explicit `global-stop.sh clear` releases it.
+- A lane in `uncertain` means tmux transport may have partially succeeded. It
+  remains closed for human inspection and is never replayed or expired
+  automatically.
 - A ticket left at `claimed` remains visible; it is not silently re-queued.
 - A QA failure is durable in `result.json` and visible on the dashboard.
 - A worker can safely repeat the same QA completion request; completed results
   are immutable and returned idempotently.
+- A crash between terminal QA and queue cleanup is reconciled idempotently on
+  the next consumer poll.
+- Completionless legacy `hermes-request task` records are held rather than sent
+  into a lane that has no defined release event.
+- A failed QA result does not autonomously send the worker another pass. Kevin
+  reviews the evidence and issues a new corrective order if needed.
 - No Phase 5 action approves or performs a deployment.

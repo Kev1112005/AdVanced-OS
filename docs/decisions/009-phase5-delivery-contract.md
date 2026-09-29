@@ -19,9 +19,15 @@ there was no durable baseline against which to run post-delivery checks.
 ## Chosen Approach
 
 Use the existing request JSON as the delivery contract. Mission Control creates
-typed `qa_checks`; the serial consumer records the git baseline at actual
-delivery; the worker sends an asynchronous `qa` request; and
-`scripts/qa-gate.sh` runs the checks from the registered workspace.
+typed `qa_checks`; the serial consumer registers the immutable contract and git
+baseline before touching tmux; the worker sends an asynchronous `qa` request;
+and `scripts/qa-gate.sh` runs the checks from the registered workspace.
+
+A non-expiring disk-backed lane spans worker delivery through terminal QA or
+durable pipeline-stage completion. The consumer rechecks the full circuit
+breaker immediately before transport. A partial or ambiguous transport becomes
+`dispatch_uncertain` and is never retried automatically. Only a completion for
+the exact active contract can release the lane.
 
 Task-run state is flat JSON under `~/.hermes/task-runs/`. Report-only tickets
 share the same mechanism but require a captured result instead of a commit.
@@ -41,6 +47,8 @@ ticket to `pending_review`; only Kevin can mark it done.
   mutation boundary.
 - Immutable result files are inspectable in Mission Control and with ordinary
   filesystem tools.
+- A persistent exact-request lane enforces concurrency one across polls and
+  restarts without adding a dispatcher framework or database.
 
 ## Consequences
 
@@ -49,6 +57,12 @@ ticket to `pending_review`; only Kevin can mark it done.
   be deterministic and non-interactive.
 - Natural-language acceptance criteria remain useful context but do not become
   executable checks unless represented by a typed QA field.
+- Task-run delivery states are `queued`, `registered`, `dispatched`,
+  `dispatch_uncertain`, and terminal `qa_pass` / `qa_fail`.
+- Busy workers retain queued work indefinitely; malformed requests are
+  quarantined rather than discarded.
+- QA results are one-shot and immutable. Automated correction attempts and
+  multi-attempt result ledgers require a separate future decision.
 - Tickets can be automatically claimed and evaluated, but never automatically
   completed or deployed.
 - Tool-scoped profile creation remains a separate, deferred Phase 5f concern.

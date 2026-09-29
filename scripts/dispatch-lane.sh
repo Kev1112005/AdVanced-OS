@@ -9,6 +9,7 @@
 #   dispatch-lane.sh transition --request-id ID --status submitting|active|uncertain
 #   dispatch-lane.sh release --request-id ID --reason preflight_failed|qa_terminal|pipeline_complete
 #   dispatch-lane.sh matches --request-id ID
+#   dispatch-lane.sh completion-status --request-id ID
 #   dispatch-lane.sh status
 set -euo pipefail
 
@@ -69,6 +70,11 @@ def atomic_json(path, value):
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
+        descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
     finally:
         try:
             os.unlink(temp_name)
@@ -148,6 +154,11 @@ try:
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temp_name, path)
+    descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 finally:
     try:
         os.unlink(temp_name)
@@ -191,11 +202,45 @@ if record.get("request_id") != os.environ["REQUEST_ID"]:
 if os.environ["RELEASE_REASON"] == "preflight_failed" and record.get("status") != "reserved":
     raise SystemExit("error: transport started; preflight release is forbidden")
 path.unlink()
+descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
 print(json.dumps({
     "status": "open",
     "released_request_id": os.environ["REQUEST_ID"],
     "reason": os.environ["RELEASE_REASON"],
 }))
+PY
+    ;;
+
+  completion-status)
+    request_id=""
+    [[ "${1:-}" == "--request-id" ]] && {
+      request_id="${2:?--request-id needs a value}"
+      shift 2
+    }
+    [[ $# -eq 0 ]] || { echo "error: unknown arguments" >&2; exit 2; }
+    safe_id "$request_id" || { echo "error: valid --request-id required" >&2; exit 2; }
+    LANE_FILE="$LANE_FILE" REQUEST_ID="$request_id" python3 - <<'PY'
+import json
+import os
+import pathlib
+
+path = pathlib.Path(os.environ["LANE_FILE"])
+if not path.is_file() or path.is_symlink():
+    raise SystemExit("error: no valid active dispatch lane")
+try:
+    record = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, ValueError) as exc:
+    raise SystemExit(f"error: dispatch lane state is invalid: {exc}")
+if record.get("request_id") != os.environ["REQUEST_ID"]:
+    raise SystemExit("error: dispatch lane belongs to a different request")
+status = str(record.get("status") or "")
+if status not in {"active", "uncertain"}:
+    raise SystemExit(f"error: lane status {status or 'missing'} cannot complete")
+print(status)
 PY
     ;;
 

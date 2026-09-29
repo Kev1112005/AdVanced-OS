@@ -68,6 +68,24 @@ def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def fsync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def contract_hash(value):
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def atomic_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -78,6 +96,7 @@ def atomic_json(path, value):
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
+        fsync_directory(path.parent)
     finally:
         try:
             os.unlink(temp_name)
@@ -122,43 +141,20 @@ def git_value(workspace, *args):
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def update_ticket_status(source, status):
-    if not source:
-        return
-    try:
-        path = pathlib.Path(source).expanduser().resolve()
-        path.relative_to(ticket_root)
-    except (OSError, ValueError):
-        return
-    if not path.is_file():
-        return
-    content = path.read_text(encoding="utf-8")
-    if not content.startswith("---\n"):
-        return
-    content, count = re.subn(
-        r"(?m)^status:\s*[^\n]*$",
-        f"status: {status}",
-        content,
-        count=1,
-    )
-    if not count:
-        return
-    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temp.write_text(content, encoding="utf-8")
-    os.replace(temp, path)
-
-
 workspace = resolve_workspace()
 task_dir = run_root / request_id
 task_dir.mkdir(parents=True, exist_ok=True)
 os.chmod(task_dir, 0o700)
 stored_request = task_dir / "request.json"
-incoming_hash = hashlib.sha256(request_path.read_bytes()).hexdigest()
+incoming_hash = contract_hash(request)
+incoming_raw_hash = hashlib.sha256(request_path.read_bytes()).hexdigest()
+stored_raw_hash = ""
 if stored_request.exists():
     existing = json.loads(stored_request.read_text(encoding="utf-8"))
     if existing.get("request_id") != request_id:
         raise SystemExit("error: task-run request conflict")
-    stored_hash = hashlib.sha256(stored_request.read_bytes()).hexdigest()
+    stored_hash = contract_hash(existing)
+    stored_raw_hash = hashlib.sha256(stored_request.read_bytes()).hexdigest()
     if stored_hash != incoming_hash:
         raise SystemExit("error: queued request differs from the registered delivery contract")
 else:
@@ -171,8 +167,16 @@ if state_path.exists():
     previous_state = json.loads(state_path.read_text(encoding="utf-8"))
 expected_hash = str(previous_state.get("request_sha256") or "")
 if expected_hash and expected_hash != incoming_hash:
-    raise SystemExit("error: queued request hash does not match the durable delivery contract")
+    legacy_match = (
+        not previous_state.get("request_hash_format")
+        and expected_hash in {incoming_raw_hash, stored_raw_hash}
+    )
+    if not legacy_match:
+        raise SystemExit("error: queued request hash does not match the durable delivery contract")
 if previous_state.get("registered_at"):
+    previous_state["request_sha256"] = incoming_hash
+    previous_state["request_hash_format"] = "canonical-json-v1"
+    atomic_json(state_path, previous_state)
     print(json.dumps(previous_state))
     raise SystemExit(0)
 state = {
@@ -187,8 +191,8 @@ state = {
     "agent": request.get("agent_id") or request.get("agent") or "",
     "ticket_id": request.get("ticket_id") or "",
     "source_ticket": request.get("source_ticket") or "",
-    "request_sha256": previous_state.get("request_sha256")
-    or incoming_hash,
+    "request_sha256": incoming_hash,
+    "request_hash_format": "canonical-json-v1",
 }
 atomic_json(state_path, state)
 print(json.dumps(state))
@@ -244,6 +248,14 @@ def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def fsync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def atomic_text(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -253,6 +265,7 @@ def atomic_text(path, text):
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
+        fsync_directory(path.parent)
     finally:
         try:
             os.unlink(temp_name)
@@ -332,7 +345,8 @@ PY
       exit 2
     }
     RUN_DIR="$RUN_DIR" TICKET_DIR="$TICKET_DIR" REQUEST_ID="$request_id" \
-      COMPLETION_FILE="$completion_file" QA_TIMEOUT="$QA_TIMEOUT" python3 - <<'PY'
+      COMPLETION_FILE="$completion_file" QA_TIMEOUT="$QA_TIMEOUT" \
+      ALLOW_UNCERTAIN="${HERMES_QA_ALLOW_UNCERTAIN:-0}" python3 - <<'PY'
 import json
 import hashlib
 import os
@@ -351,10 +365,29 @@ state_path = task_dir / "state.json"
 state = json.loads(state_path.read_text(encoding="utf-8"))
 result_path = task_dir / "result.json"
 timeout = max(1, min(3600, int(os.environ.get("QA_TIMEOUT", "600"))))
+allow_uncertain = os.environ.get("ALLOW_UNCERTAIN") == "1"
 
 
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def fsync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def contract_hash(value):
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def atomic_text(path, text):
@@ -366,6 +399,7 @@ def atomic_text(path, text):
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
+        fsync_directory(path.parent)
     finally:
         try:
             os.unlink(temp_name)
@@ -459,21 +493,63 @@ def update_ticket(source, status, report):
     atomic_text(path, content)
 
 
+source_status = str(state.get("status") or "")
+if source_status == "dispatch_uncertain" and not allow_uncertain:
+    raise SystemExit(
+        "error: dispatch_uncertain completion requires explicit lane validation"
+    )
+if source_status not in {"dispatched", "dispatch_uncertain", "qa_pass", "qa_fail"}:
+    raise SystemExit(
+        f"error: delivery state {source_status or 'missing'} cannot complete QA"
+    )
+
+expected_contract_hash = str(state.get("request_sha256") or "")
+actual_contract_hash = contract_hash(request)
+if expected_contract_hash and actual_contract_hash != expected_contract_hash:
+    if result_path.exists():
+        raise SystemExit("error: immutable QA result has a mutated delivery contract")
+
+report_path = task_dir / "result.md"
+report = completion_result()
+if not report and report_path.is_file():
+    report = report_path.read_text(encoding="utf-8").strip()
+
 if result_path.exists():
     existing = json.loads(result_path.read_text(encoding="utf-8"))
+    existing_status = str(existing.get("status") or "")
+    if (
+        existing.get("request_id") != request_id
+        or existing_status not in {"qa_pass", "qa_fail"}
+    ):
+        raise SystemExit("error: immutable QA result is invalid")
+    result_hash = str(existing.get("request_sha256") or expected_contract_hash)
+    if result_hash != actual_contract_hash:
+        raise SystemExit("error: immutable QA result belongs to a different contract")
+    if report:
+        atomic_text(report_path, report + "\n")
+    update_ticket(
+        request.get("source_ticket"),
+        "pending_review" if existing_status == "qa_pass" else "blocked",
+        report,
+    )
+    state.update({
+        "status": existing_status,
+        "qa_completed_at": existing.get("checked_at") or state.get("qa_completed_at"),
+    })
+    atomic_json(state_path, state)
     print(json.dumps(existing))
-    raise SystemExit(0 if existing.get("status") == "qa_pass" else 1)
+    raise SystemExit(0 if existing_status == "qa_pass" else 1)
+
+if source_status in {"qa_pass", "qa_fail"}:
+    raise SystemExit("error: terminal QA state is missing its immutable result")
 
 workspace_value = str(state.get("workspace") or "")
 workspace = pathlib.Path(workspace_value).resolve() if workspace_value else None
-report = completion_result()
 if report:
-    atomic_text(task_dir / "result.md", report + "\n")
+    atomic_text(report_path, report + "\n")
 
 checks = request.get("qa_checks") or []
 results = []
-expected_contract_hash = str(state.get("request_sha256") or "")
-actual_contract_hash = hashlib.sha256((task_dir / "request.json").read_bytes()).hexdigest()
 if expected_contract_hash and actual_contract_hash != expected_contract_hash:
     results.append({
         "index": 0,
@@ -561,15 +637,17 @@ result = {
     "checks": results,
     "ticket_id": request.get("ticket_id") or "",
     "has_result": bool(report),
+    "request_sha256": actual_contract_hash,
+    "source_status": source_status,
 }
 atomic_json(result_path, result)
-state.update({"status": status, "qa_completed_at": result["checked_at"]})
-atomic_json(state_path, state)
 update_ticket(
     request.get("source_ticket"),
     "pending_review" if passed else "blocked",
     report,
 )
+state.update({"status": status, "qa_completed_at": result["checked_at"]})
+atomic_json(state_path, state)
 print(json.dumps(result))
 raise SystemExit(0 if passed else 1)
 PY

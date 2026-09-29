@@ -15,7 +15,13 @@ Two complementary interfaces sit above the orchestrator. They share the same bac
 | **Mission Control GUI** | Awareness + trusted local control — monitor agents and issue explicit operator actions | Static HTML + CSS + JS, polls JSON endpoints | Sitting at a desk, want to see and control everything at once |
 | **Discord CLI** | Complementary remote control — dispatch, approve deploys, stop, configure | Hermes Agent via Discord | On mobile, in a meeting, or when an action is faster by conversation |
 
-The GUI is the primary interface and local control surface. It can issue structured orders, follow up with live agents, hold or interrupt work, restart configured sessions, record deployment decisions, and engage the disk-backed global stop. The CLI remains the remote control surface. Both share the same provider registry, durable order queue, event log, status snapshot, deployment request and decision directories, and safety state.
+The GUI is the primary interface and local control surface. It can issue
+structured orders, follow up with live agents, hold future work, restart
+configured sessions, record deployment decisions, and engage the disk-backed
+global stop. Direct interruption is not exposed until a cooperative halt
+contract exists. The CLI remains the remote control surface. Both share the
+same provider registry, durable order queue, event log, status snapshot,
+deployment request and decision directories, and safety state.
 
 Phase 5 adds three more flat-file surfaces to the same GUI: immutable QA run
 state in `~/.hermes/task-runs/`, report-only vault tickets in
@@ -79,6 +85,27 @@ The dispatch layer is the communication channel between Hermes and its workers. 
 | File-based async bridge | Claude Code → Hermes | Worker→Orchestrator communication | Fire-and-forget only. No synchronous response expected. |
 
 **Critical rule:** Workers CANNOT trigger deploys, cron changes, or state mutations. Those are Hermes's job, behind Kevin's approval. The only exception is `hermes-request` (research) and `hermes-notify` — fire-and-forget messages that Hermes picks up asynchronously.
+
+### Persistent Serial Lane
+
+The consumer process lock prevents two drainers from reading the queue at the
+same time. A separate disk record, `~/.hermes/dispatch-lane.json`, enforces the
+stronger rule that only one worker task may remain active across consumer polls
+and restarts.
+
+The lane progresses through `reserved → submitting → active`. Every worker
+delivery runs the full circuit breaker immediately before transport. QA is
+registered and its immutable contract hash is checked before any tmux input.
+If any transport step becomes ambiguous, the lane and task run move to
+`uncertain` / `dispatch_uncertain`; the request is never retried automatically.
+Only the exact request's terminal QA result or durable pipeline-stage completion
+may release a started lane. The lane never expires and no watchdog guesses that
+work is safe to replay.
+
+Busy agents provide backpressure: queued work remains durable. Malformed queue
+records are moved to a forensic quarantine instead of being deleted.
+Completionless legacy `hermes-request task` records remain held until a
+completion contract is explicitly designed.
 
 ### Layer 3: Workers
 

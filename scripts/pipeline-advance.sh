@@ -25,12 +25,29 @@ alert() {
     --message "$3" >/dev/null 2>&1 || true
 }
 
+fsync_directory() {
+  python3 - "$1" <<'PY'
+import os
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+if path.is_dir():
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+PY
+}
+
 atomic_line() {
   local path="$1" value="$2" temporary
   mkdir -p "$(dirname "$path")"
   temporary="$(mktemp "${path}.tmp.XXXXXX")"
   printf '%s\n' "$value" > "$temporary"
   mv -f "$temporary" "$path"
+  fsync_directory "$(dirname "$path")"
 }
 
 stage_values() {
@@ -157,6 +174,13 @@ try:
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temp_name, destination)
+    descriptor = os.open(
+        destination.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    )
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 finally:
     try:
         os.unlink(temp_name)
@@ -177,6 +201,7 @@ capture_output() {
     return 1
   fi
   mv -f "$temporary" "$destination"
+  fsync_directory "$(dirname "$destination")"
 }
 
 generate_report() {
@@ -211,6 +236,13 @@ try:
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temp_name, destination)
+    descriptor = os.open(
+        destination.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    )
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 finally:
     try:
         os.unlink(temp_name)

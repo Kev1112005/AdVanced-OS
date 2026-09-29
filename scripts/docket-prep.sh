@@ -74,17 +74,6 @@ shopt -u nullglob
 (( queued )) || echo "none"
 echo
 
-echo "## Idle branches (>= 2 days)"
-echo
-# ponytail: reuse the sweep's own ladder rather than re-deriving ages here.
-idle="$(HERMES_SWEEP_LOG=/dev/null bash "$SCRIPT_DIR/branch-sweep.sh" --dry-run "${REPOS[@]}" 2>/dev/null || true)"
-if [[ -n "$idle" ]]; then
-  while IFS= read -r line; do echo "- $line"; done <<< "$idle"
-else
-  echo "none"
-fi
-echo
-
 echo "## Approval latency"
 echo
 DEPLOY_DIR="$DEPLOY_DIR" APPROVAL_DIR="$APPROVAL_DIR" python3 - <<'PY'
